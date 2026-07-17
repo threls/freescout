@@ -3,7 +3,7 @@
 namespace Modules\TestEmailGuard\Services;
 
 /**
- * Anonymises email addresses for the test environment (ARMS-16).
+ * Anonymises email addresses for the test environment.
  *
  * The transform folds the original domain into the local part so that
  * distinct addresses stay distinct after anonymisation:

@@ -7,13 +7,13 @@ use App\Thread;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Adds On-Hold as a first-class conversation status (ARMS-12).
+ * Adds On-Hold as a first-class conversation status.
  *
  * Core hard-codes four statuses (Active/Pending/Closed/Spam) but exposes them
  * as mutable static arrays that Blade dropdowns, validation and JS all read
  * from — so appending a fifth status here propagates everywhere except
  * statusCodeToName(), which is covered by the conversation.status_name
- * filter added to core on the threls fork (see ARMS-12).
+ * filter added to core on the threls fork.
  *
  * Status mapping for ARMS needs only this one new status:
  * New = Active+unassigned · Open = Active+assigned · Pending = Pending ·
@@ -51,7 +51,7 @@ class OnHoldStatusServiceProvider extends ServiceProvider
      * Inserted after Pending (not appended) so every surface that iterates
      * the registries — status dropdown, search filter, bulk actions, the
      * Custom Folders checkboxes — renders the lifecycle order
-     * Active, Pending, On Hold, Closed, Spam (ARMS-14).
+     * Active, Pending, On Hold, Closed, Spam.
      */
     protected function registerStatus()
     {
@@ -94,7 +94,7 @@ class OnHoldStatusServiceProvider extends ServiceProvider
     public function hooks()
     {
         // Resolves the status name for both Conversation::statusCodeToName()
-        // and Thread::statusCodeToName() (fork patch, ARMS-12).
+        // and Thread::statusCodeToName() (fork patch).
         \Eventy::addFilter('conversation.status_name', function ($name, $status) {
             if ((int) $status === self::STATUS_ONHOLD) {
                 return __('On Hold');
@@ -105,7 +105,7 @@ class OnHoldStatusServiceProvider extends ServiceProvider
 
         // The Mine folder and chat list are live queries with an "open statuses"
         // whitelist (Active/Pending) rather than real folders — without this,
-        // On-Hold conversations vanish from Mine (fork patch, ARMS-12).
+        // On-Hold conversations vanish from Mine (fork patch).
         \Eventy::addFilter('conversation.open_statuses', function ($statuses) {
             $statuses = (array) $statuses;
             $statuses[] = self::STATUS_ONHOLD;

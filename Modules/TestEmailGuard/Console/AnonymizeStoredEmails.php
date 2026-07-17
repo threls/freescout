@@ -6,7 +6,7 @@ use Illuminate\Console\Command;
 use Modules\TestEmailGuard\Services\EmailAnonymizer;
 
 /**
- * Anonymises customer email addresses stored in the database (ARMS-16).
+ * Anonymises customer email addresses stored in the database.
  *
  * Intended to run in the test environment right after real customer data
  * lands there — e.g. after a Zendesk demo migration — so the database

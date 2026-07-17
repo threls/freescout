@@ -1,7 +1,7 @@
 {
     "name": "TestEmailGuard",
     "alias": "testemailguard",
-    "description": "Test-environment email safety net (ARMS-16). Rewrites outbound recipients to anonymised safe addresses unless the recipient domain is allow-listed, and provides a console command to anonymise stored customer emails. Hard-disabled when app.env is production.",
+    "description": "Test-environment email safety net. Rewrites outbound recipients to anonymised safe addresses unless the recipient domain is allow-listed, and provides a console command to anonymise stored customer emails. Hard-disabled when app.env is production.",
     "version": "1.0.0",
     "detailsUrl": "",
     "img": "/modules/testemailguard/img/icon.svg",

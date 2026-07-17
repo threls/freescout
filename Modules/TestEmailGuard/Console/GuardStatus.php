@@ -7,7 +7,7 @@ use Modules\TestEmailGuard\Providers\TestEmailGuardServiceProvider;
 use Modules\TestEmailGuard\Services\EmailAnonymizer;
 
 /**
- * Prints the effective state of the outbound email guard (ARMS-16), so the
+ * Prints the effective state of the outbound email guard, so the
  * environment can be verified before handing it over for bulk testing.
  */
 class GuardStatus extends Command

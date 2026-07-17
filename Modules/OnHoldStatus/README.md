@@ -1,7 +1,6 @@
 # OnHoldStatus
 
 Adds **On-Hold** as a first-class conversation status (code `5`) for ARMS.
-Tracked as [ARMS-12](https://threls.atlassian.net/browse/ARMS-12).
 
 ARMS's status lifecycle is New/Open/Pending/**On-Hold**/Solved. Core FreeScout
 hard-codes four statuses; only On-Hold needs adding — the rest map natively
@@ -67,8 +66,8 @@ either another line item (agent action) or a timestamped customer-reply thread
 (which flips the conversation back to Active — `FetchEmails.php` treats
 status 5 like Pending). Time-in-On-Hold is therefore derivable from the
 `threads` table from day one. Whether the paid Reports module *displays*
-an On-Hold slice needs on-instance verification (see ARMS-12's
-post-activation checklist); the fallback is custom queries on `threads`.
+an On-Hold slice needs verifying on the instance after the module is
+activated; the fallback is custom queries on `threads`.
 
 ## Tests
 

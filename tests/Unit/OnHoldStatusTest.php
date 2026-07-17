@@ -7,7 +7,7 @@ use App\Thread;
 use Tests\TestCase;
 
 /**
- * Covers the OnHoldStatus module (ARMS-12) and the two fork patches it
+ * Covers the OnHoldStatus module and the two fork patches it
  * depends on: the conversation.status_name Eventy filter in the default
  * case of Conversation::statusCodeToName() and Thread::statusCodeToName().
  */
@@ -83,7 +83,7 @@ class OnHoldStatusTest extends TestCase
 
     /**
      * Dropdowns render registry order — On Hold must sit after Pending,
-     * not at the end after Spam (ARMS-14).
+     * not at the end after Spam.
      */
     public function test_on_hold_is_ordered_after_pending()
     {

@@ -6,7 +6,7 @@ use Illuminate\Support\ServiceProvider;
 use Modules\TestEmailGuard\Services\EmailAnonymizer;
 
 /**
- * Test-environment outbound email guard (ARMS-16).
+ * Test-environment outbound email guard.
  *
  * Core fires the mail.process_swift_message Eventy filter for every outbound
  * message via the Illuminate MessageSending event (EventServiceProvider →

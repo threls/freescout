@@ -11,7 +11,7 @@ use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 /**
- * Covers the test-email-guard:anonymize-stored console command (ARMS-16):
+ * Covers the test-email-guard:anonymize-stored console command:
  * the scrub across emails / conversations / threads / send_logs, header
  * scrubbing (with Message-ID and References left intact), the --map CSV,
  * per-row failure handling and the production refusal. Every test runs

@@ -5,7 +5,7 @@ namespace Tests\Unit;
 use Tests\TestCase;
 
 /**
- * Covers the TestEmailGuard module (ARMS-16): the anonymisation transform,
+ * Covers the TestEmailGuard module: the anonymisation transform,
  * the allow-list, the sink-mailbox mode and the send-time guard hooked to
  * core's mail.process_swift_message filter.
  */

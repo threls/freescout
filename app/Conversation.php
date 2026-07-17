@@ -586,7 +586,7 @@ class Conversation extends Model
             //     break;
 
             default:
-                // Allows modules to register extra statuses (threls fork patch, ARMS-12).
+                // Allows modules to register extra statuses (threls fork patch).
                 return \Eventy::filter('conversation.status_name', '', $status);
                 break;
         }
@@ -1116,7 +1116,7 @@ class Conversation extends Model
         // Get conversations from personal folder
         if ($folder->type == Folder::TYPE_MINE) {
             $query_conversations = self::where('mailbox_id', $folder->mailbox_id)
-                // Allows modules to register extra open-type statuses (threls fork patch, ARMS-12).
+                // Allows modules to register extra open-type statuses (threls fork patch).
                 ->whereIn('status', (array) \Eventy::filter('conversation.open_statuses', [self::STATUS_ACTIVE, self::STATUS_PENDING]))
                 ->where('state', self::STATE_PUBLISHED);
 
@@ -2530,7 +2530,7 @@ class Conversation extends Model
         $chats = Conversation::where('type', self::TYPE_CHAT)
             ->where('mailbox_id', $mailbox_id)
             ->where('state', self::STATE_PUBLISHED)
-            // Allows modules to register extra open-type statuses (threls fork patch, ARMS-12).
+            // Allows modules to register extra open-type statuses (threls fork patch).
             ->whereIn('status', (array) \Eventy::filter('conversation.open_statuses', [self::STATUS_ACTIVE, self::STATUS_PENDING]))
             ->orderBy('last_reply_at', 'desc')
             ->offset($offset)

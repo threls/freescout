@@ -1,6 +1,6 @@
 # TestEmailGuard
 
-Test-environment email safety net ([ARMS-16](https://threls.atlassian.net/browse/ARMS-16)). Lets the team bulk-test with realistic customer data while making it impossible for the test instance to email real people.
+Test-environment email safety net. Lets the team bulk-test with realistic customer data while making it impossible for the test instance to email real people.
 
 Two layers, belt and braces:
 
