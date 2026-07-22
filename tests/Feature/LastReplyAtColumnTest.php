@@ -169,6 +169,62 @@ class LastReplyAtColumnTest extends TestCase
         $this->assertNotSame('', $conversation->getLastReplyAtHuman());
     }
 
+    /**
+     * Self-review catch (22 Jul): a forward is stored as Thread::TYPE_MESSAGE
+     * too (see ConversationsController's forward-sending code), distinguished
+     * only by subtype == SUBTYPE_FORWARD. Forwarding a conversation elsewhere
+     * is not a reply to the customer — a conversation that's only ever been
+     * forwarded must still read "No Replies", the same bug class this whole
+     * fix targets, just a narrower case.
+     */
+    public function test_forward_only_conversation_has_not_replied()
+    {
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $user = $this->makeUser($mailbox->id);
+
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        factory(Thread::class)->create([
+            'conversation_id' => $conversation->id,
+            'type'            => Thread::TYPE_MESSAGE,
+            'subtype'         => Thread::SUBTYPE_FORWARD,
+            'state'           => Thread::STATE_PUBLISHED,
+            'source_via'      => Thread::PERSON_USER,
+            'user_id'         => $user->id,
+            'created_by_user_id' => $user->id,
+        ]);
+        $conversation = $conversation->fresh();
+
+        $this->assertFalse($conversation->hasReplied(), 'a forward is not a reply to the customer');
+        $this->assertSame('', $conversation->getLastReplyAtHuman());
+    }
+
+    /**
+     * Self-review catch (22 Jul): conversations_table.blade.php calls
+     * hasReplied() once in an @if, then getLastReplyAtHuman() calls it
+     * again internally for the same row — without memoizing, every
+     * replied-to row on a folder page ran this query twice.
+     */
+    public function test_has_replied_result_is_memoized()
+    {
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $user = $this->makeUser($mailbox->id);
+
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        $this->makeReplyThread($conversation->id, $user->id);
+        $conversation = $conversation->fresh();
+
+        \DB::enableQueryLog();
+        $conversation->hasReplied();
+        $conversation->hasReplied();
+        $conversation->getLastReplyAtHuman();
+        $queryCount = count(\DB::getQueryLog());
+        \DB::disableQueryLog();
+
+        $this->assertSame(1, $queryCount, 'hasReplied() must only query once per instance, however many times it (or getLastReplyAtHuman()) is called');
+    }
+
     public function test_sort_by_last_reply_at_is_accepted()
     {
         request()->merge(['sorting' => ['sort_by' => 'last_reply_at', 'order' => 'asc']]);
