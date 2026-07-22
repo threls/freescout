@@ -51,6 +51,24 @@ class LastReplyAtColumnTest extends TestCase
     }
 
     /**
+     * A genuine reply (Thread::TYPE_MESSAGE) — distinct from the customer's
+     * own incoming message, which ThreadObserver also touches (see
+     * hasReplied()'s docblock) but which is not "a reply" in the sense this
+     * column means.
+     */
+    protected function makeReplyThread($conversationId, $userId)
+    {
+        return factory(Thread::class)->create([
+            'conversation_id' => $conversationId,
+            'type'            => Thread::TYPE_MESSAGE,
+            'state'           => Thread::STATE_PUBLISHED,
+            'source_via'      => Thread::PERSON_USER,
+            'user_id'         => $userId,
+            'created_by_user_id' => $userId,
+        ]);
+    }
+
+    /**
      * The whole point of the new column: it must keep showing
      * last_reply_at in folders where "Waiting Since" shows something else
      * entirely (closed_at here).
@@ -61,9 +79,21 @@ class LastReplyAtColumnTest extends TestCase
         $folder = $this->makeFolder($mailbox->id, Folder::TYPE_CLOSED);
         $user = $this->makeUser($mailbox->id);
 
-        $conversation = $this->makeConversation($mailbox->id, $folder->id, '2026-01-05 10:00:00', $user->id);
-        $conversation->closed_at = '2026-01-10 12:00:00';
-        $conversation->save();
+        // Created with a null last_reply_at, then set by hand after the
+        // reply thread, since ThreadObserver::created() would otherwise
+        // overwrite it with "now" as a real side effect of creating the
+        // thread — same reasoning as test_search_sorts_by_last_reply_at
+        // below. A raw DB update, not Eloquent save(), plus a fresh reload,
+        // since save() would only re-persist this object's stale in-memory
+        // last_reply_at (still null) rather than reading back what the raw
+        // update just wrote.
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        $this->makeReplyThread($conversation->id, $user->id);
+        \DB::table('conversations')->where('id', $conversation->id)->update([
+            'last_reply_at' => '2026-01-05 10:00:00',
+            'closed_at'     => '2026-01-10 12:00:00',
+        ]);
+        $conversation = $conversation->fresh();
 
         // Waiting Since, in the Closed folder, reads closed_at...
         $this->assertSame(
@@ -87,6 +117,56 @@ class LastReplyAtColumnTest extends TestCase
         $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
 
         $this->assertSame('', $conversation->getLastReplyAtHuman());
+    }
+
+    /**
+     * Reproduces the exact bug reported live (Omar, 22 Jul): a conversation
+     * with only the customer's initial message — no genuine reply — still
+     * ends up with a non-null last_reply_at, because ThreadObserver::created()
+     * stamps it on message #1 too (last_reply_from starts out null, and
+     * null != Conversation::PERSON_CUSTOMER, so the "skip consecutive
+     * customer messages" guard there doesn't catch the very first one).
+     * getLastReplyAtHuman() must return '' here regardless — trusting
+     * last_reply_at being null was never a safe way to detect "no reply".
+     */
+    public function test_last_reply_at_human_is_empty_when_only_customer_message_exists()
+    {
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $user = $this->makeUser($mailbox->id);
+
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        factory(Thread::class)->create([
+            'conversation_id' => $conversation->id,
+            'type'            => Thread::TYPE_CUSTOMER,
+            'state'           => Thread::STATE_PUBLISHED,
+        ]);
+        $conversation = $conversation->fresh();
+
+        $this->assertNotNull($conversation->last_reply_at, 'sanity check: this is the actual bug mechanism — last_reply_at IS set here');
+        $this->assertFalse($conversation->hasReplied());
+        $this->assertSame('', $conversation->getLastReplyAtHuman());
+    }
+
+    /**
+     * Companion: once a genuine reply (Thread::TYPE_MESSAGE) exists,
+     * hasReplied() must flip true and the human string must actually
+     * appear — proves the fix doesn't just suppress everything.
+     */
+    public function test_has_replied_becomes_true_after_a_genuine_reply()
+    {
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $user = $this->makeUser($mailbox->id);
+
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        $this->assertFalse($conversation->hasReplied());
+
+        $this->makeReplyThread($conversation->id, $user->id);
+        $conversation = $conversation->fresh();
+
+        $this->assertTrue($conversation->hasReplied());
+        $this->assertNotSame('', $conversation->getLastReplyAtHuman());
     }
 
     public function test_sort_by_last_reply_at_is_accepted()
@@ -167,7 +247,10 @@ class LastReplyAtColumnTest extends TestCase
         $user = $this->makeUser($mailbox->id);
         $this->actingAs($user);
 
-        $conversation = $this->makeConversation($mailbox->id, $folder->id, '2026-01-01 00:00:00', $user->id);
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        $this->makeReplyThread($conversation->id, $user->id);
+        \DB::table('conversations')->where('id', $conversation->id)->update(['last_reply_at' => '2026-01-01 00:00:00']);
+        $conversation = $conversation->fresh();
 
         $conversations = Conversation::getQueryByFolder($folder, $user->id)->paginate(50);
 
@@ -180,6 +263,7 @@ class LastReplyAtColumnTest extends TestCase
         $this->assertStringContainsString('data-sort-by="last_reply_at"', $html);
         $this->assertStringContainsString('Last Replied At', $html);
         $this->assertStringContainsString('conv-last-reply-at', $html);
+        $this->assertNotSame('', $conversation->getLastReplyAtHuman(), 'fixture must actually have a reply, or this assertion is vacuous');
         $this->assertStringContainsString($conversation->getLastReplyAtHuman(), $html);
     }
 
@@ -197,8 +281,24 @@ class LastReplyAtColumnTest extends TestCase
         $user = $this->makeUser($mailbox->id);
         $this->actingAs($user);
 
-        $withReply = $this->makeConversation($mailbox->id, $folder->id, '2026-01-01 00:00:00', $user->id);
+        $withReply = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        $this->makeReplyThread($withReply->id, $user->id);
+        \DB::table('conversations')->where('id', $withReply->id)->update(['last_reply_at' => '2026-01-01 00:00:00']);
+        $withReply = $withReply->fresh();
+
+        // Only a customer-type thread, no genuine reply — reproduces the
+        // exact bug found live 22 Jul (Omar): ThreadObserver::created()
+        // stamps last_reply_at on the customer's own first message too, so
+        // this conversation's last_reply_at is NOT null despite never
+        // having been replied to (see hasReplied()'s docblock).
         $withoutReply = $this->makeConversation($mailbox->id, $folder->id, null, $user->id);
+        factory(Thread::class)->create([
+            'conversation_id' => $withoutReply->id,
+            'type'            => Thread::TYPE_CUSTOMER,
+            'state'           => Thread::STATE_PUBLISHED,
+        ]);
+        $withoutReply = $withoutReply->fresh();
+        $this->assertNotNull($withoutReply->last_reply_at, 'sanity check: the bug this reproduces is last_reply_at being set despite no reply');
 
         $conversations = Conversation::getQueryByFolder($folder, $user->id)->orderBy('conversations.id')->paginate(50);
 
@@ -217,7 +317,9 @@ class LastReplyAtColumnTest extends TestCase
         // The no-reply conversation's cell must render no <a> at all — an
         // empty-but-focusable link is bad for keyboard/screen-reader users
         // (gemini-code-assist review, PR #17) — not just fall back to a
-        // generic title on an empty link.
+        // generic title on an empty link. And it must read "No Replies"
+        // (Omar, 22 Jul) rather than a misleading "X hours/days ago" from
+        // last_reply_at's stale value, or a silent blank cell.
         $rowStart = strpos($html, 'data-conversation_id="'.$withoutReply->id.'"');
         $this->assertNotFalse($rowStart);
         $rowEnd = strpos($html, '</tr>', $rowStart);
@@ -225,7 +327,7 @@ class LastReplyAtColumnTest extends TestCase
 
         $cell = $this->lastReplyAtCell($row);
         $this->assertStringNotContainsString('<a', $cell);
-        $this->assertStringContainsString('&nbsp;', $cell);
+        $this->assertStringContainsString('No Replies', $cell);
     }
 
     /**

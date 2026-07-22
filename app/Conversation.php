@@ -1673,13 +1673,39 @@ class Conversation extends Model
      * threls fork patch (ARMS-36): "time ago" for the most recent reply,
      * regardless of folder — distinct from getWaitingSince(), whose
      * underlying field varies by folder (closed_at, updated_at, etc.).
-     * Empty if there's no reply yet (a conversation with only the initial
-     * message never gets a last_reply_at), matching how dateDiffForHumans()
-     * already handles a falsy date rather than inventing a fallback.
+     *
+     * Empty if there's no genuine reply yet. The original assumption here
+     * (a conversation with only the initial message never gets a
+     * last_reply_at) turned out to be wrong: ThreadObserver::created()
+     * stamps last_reply_at on the customer's very first message too, since
+     * last_reply_from starts out null on a brand-new conversation and
+     * null != Conversation::PERSON_CUSTOMER — so the "skip consecutive
+     * customer messages" guard there doesn't catch message #1. Found live
+     * (Omar, 22 Jul): a conversation with zero replies showed a real "17
+     * hours ago" instead of being blank. hasReplied() checks for a genuine
+     * reply thread directly rather than trusting last_reply_at.
      */
     public function getLastReplyAtHuman()
     {
+        if (!$this->hasReplied()) {
+            return '';
+        }
+
         return \App\User::dateDiffForHumans($this->last_reply_at);
+    }
+
+    /**
+     * Whether staff has actually sent a reply at any point — distinct from
+     * last_reply_at/threads_count, both of which the customer's own
+     * messages (and, in threads_count's case, notes) also update, so
+     * neither can answer "has anyone replied" on its own.
+     */
+    public function hasReplied()
+    {
+        return $this->threads()
+            ->where('type', Thread::TYPE_MESSAGE)
+            ->where('state', Thread::STATE_PUBLISHED)
+            ->exists();
     }
 
     /**

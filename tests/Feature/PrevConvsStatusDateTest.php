@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Conversation;
 use App\Customer;
 use App\Mailbox;
+use App\Thread;
 use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
@@ -59,7 +60,20 @@ class PrevConvsStatusDateTest extends TestCase
         $user = $this->makeUser();
         $customer = factory(Customer::class)->create();
 
-        $conversation = $this->makeConversation($mailbox->id, $customer->id, $user->id, Conversation::STATUS_PENDING, '2026-01-05 10:00:00');
+        // getLastReplyAtHuman() requires a genuine reply thread, not just a
+        // populated last_reply_at column (fixed 22 Jul — see
+        // Conversation::hasReplied()'s docblock and LastReplyAtColumnTest),
+        // so this fixture needs one to actually exercise the date span.
+        $conversation = $this->makeConversation($mailbox->id, $customer->id, $user->id, Conversation::STATUS_PENDING, null);
+        factory(Thread::class)->create([
+            'conversation_id' => $conversation->id,
+            'type'            => Thread::TYPE_MESSAGE,
+            'state'           => Thread::STATE_PUBLISHED,
+            'user_id'         => $user->id,
+            'created_by_user_id' => $user->id,
+        ]);
+        \DB::table('conversations')->where('id', $conversation->id)->update(['last_reply_at' => '2026-01-05 10:00:00']);
+        $conversation = $conversation->fresh();
 
         $html = $this->renderSidebar($customer, [$conversation->id]);
 
