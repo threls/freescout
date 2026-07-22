@@ -3096,7 +3096,7 @@ class ConversationsController extends Controller
             ->leftJoin('emails', function ($join) {
                 $join->on('customers.id', '=', 'emails.customer_id');
             })
-            ->where(function ($query) use ($like, $q) {
+            ->where(function ($query) use ($like, $q, $filters) {
                 $like_op = 'like';
                 if (\Helper::isPgSql()) {
                     $like_op = 'ilike';
@@ -3128,8 +3128,10 @@ class ConversationsController extends Controller
                 // hook would incorrectly bypass mailbox scoping — Laravel
                 // flattens sequential where()/orWhere() calls, so an orWhere
                 // added after an AND'd mailbox condition ORs against the
-                // whole expression, not just this group.
-                $query = \Eventy::filter('search.customers.text_match', $query, $q, $like_op);
+                // whole expression, not just this group. $filters is passed
+                // through so a listener can read e.g. a "which field" choice
+                // without needing its own request-parsing.
+                $query = \Eventy::filter('search.customers.text_match', $query, $q, $like_op, $filters);
             });
 
         if (!empty($filters['mailbox']) && in_array($filters['mailbox'], $mailbox_ids)) {

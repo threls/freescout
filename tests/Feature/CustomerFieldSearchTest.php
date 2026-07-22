@@ -43,6 +43,14 @@ class CustomerFieldSearchTest extends TestCase
 
         require_once __DIR__.'/../../Modules/CustomerFieldSearch/Providers/CustomerFieldSearchServiceProvider.php';
 
+        // fieldOptions() caches the distinct customer_field_id list; without
+        // clearing it, a value seeded by one test method is invisible to a
+        // later test method for the rest of the cache TTL, since this suite
+        // doesn't use DatabaseTransactions (DDL above implicitly commits any
+        // open transaction on MySQL) and so shares one cache store across
+        // every test in this class.
+        \Illuminate\Support\Facades\Cache::forget('customerfieldsearch.field_options');
+
         if (!Schema::hasTable('customer_customer_field')) {
             Schema::create('customer_customer_field', function ($table) {
                 $table->increments('id');
@@ -575,5 +583,160 @@ class CustomerFieldSearchTest extends TestCase
 
         $migration->down();
         $migration->down();
+    }
+
+    /**
+     * Covers the "Custom Field" dropdown filter added to Search > Customers:
+     * a customer with two fields sharing a search-term-matching prefix in
+     * different fields must be found or excluded depending on which field
+     * (if any) the agent selected — proving the filter actually narrows the
+     * match rather than being a no-op alongside the existing broad match.
+     */
+    public function test_customers_tab_field_filter_narrows_match_to_selected_field()
+    {
+        $customer = $this->makeCustomer();
+        $this->setCustomerFieldValue($customer->id, 1, 'ACCT-100');
+        $this->setCustomerFieldValue($customer->id, 2, 'ACCT-200');
+
+        $user = $this->makeUser();
+        $controller = new \App\Http\Controllers\ConversationsController();
+
+        // No filter: matches via either field, same as before this feature.
+        $results = $controller->searchCustomers($this->searchCustomersRequest('ACCT-2'), $user);
+        $this->assertContains($customer->id, collect($results->items())->pluck('id')->all());
+
+        // Restricted to field 1 (value 'ACCT-100'): 'ACCT-2' must not match.
+        $request = Request::create('/conversations/search', 'GET', [
+            'q' => 'ACCT-2',
+            'f' => ['customer_field' => 1],
+        ]);
+        $results = $controller->searchCustomers($request, $user);
+        $this->assertNotContains($customer->id, collect($results->items())->pluck('id')->all());
+
+        // Restricted to field 2 (value 'ACCT-200'): 'ACCT-2' matches again.
+        $request = Request::create('/conversations/search', 'GET', [
+            'q' => 'ACCT-2',
+            'f' => ['customer_field' => 2],
+        ]);
+        $results = $controller->searchCustomers($request, $user);
+        $this->assertContains($customer->id, collect($results->items())->pluck('id')->all());
+    }
+
+    /**
+     * Same narrowing property as the Customers-tab test above, for the
+     * Conversations tab — a structurally different call site (model method,
+     * not a controller), so needs its own proof.
+     */
+    public function test_conversations_tab_field_filter_narrows_match_to_selected_field()
+    {
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $user = $this->makeUser($mailbox->id);
+
+        $customer = $this->makeCustomer();
+        $this->setCustomerFieldValue($customer->id, 1, 'IDCARD-100');
+        $this->setCustomerFieldValue($customer->id, 2, 'IDCARD-200');
+
+        $conversation = $this->makeConversation($mailbox->id, $folder->id, $customer->id, $user->id);
+
+        $ids = Conversation::search('IDCARD-2', [], $user)->pluck('id')->all();
+        $this->assertContains($conversation->id, $ids, 'no filter: matches via either field');
+
+        $ids = Conversation::search('IDCARD-2', ['customer_field' => 1], $user)->pluck('id')->all();
+        $this->assertNotContains($conversation->id, $ids, 'restricted to field 1, whose value does not match');
+
+        $ids = Conversation::search('IDCARD-2', ['customer_field' => 2], $user)->pluck('id')->all();
+        $this->assertContains($conversation->id, $ids, 'restricted to field 2, whose value matches');
+    }
+
+    /**
+     * ajaxSearch() (the ticket sidebar/Change Customer/Merge/Cc-Bcc/New
+     * Ticket widget) deliberately has no "Custom Field" dropdown of its own
+     * — it's a compact autocomplete, not a filtered search page. Confirms
+     * that's actually true rather than assumed: passing a field_id-shaped
+     * value has no effect, the match still considers any field.
+     */
+    public function test_ajax_search_ignores_field_filter_and_still_matches_any_field()
+    {
+        $customer = $this->makeCustomer();
+        $this->setCustomerFieldValue($customer->id, 1, '223344556');
+
+        $user = $this->makeUser();
+        $this->actingAs($user);
+
+        $request = Request::create('/customers/ajax-search', 'GET', [
+            'q'                => '223344',
+            'search_by'        => 'all',
+            'use_id'           => 1,
+            'allow_non_emails' => 1,
+            'field_id'         => 999, // not a real filter param on this endpoint — must be ignored, not error
+        ]);
+
+        $controller = new \App\Http\Controllers\CustomersController();
+        $response = json_decode($controller->ajaxSearch($request)->getContent(), true);
+
+        $ids = array_column($response['results'], 'id');
+        $this->assertContains($customer->id, $ids);
+    }
+
+    /**
+     * The "Custom Field" dropdown's options: a labelled config entry reads
+     * naturally, an unlabelled but present field ID still shows up (so the
+     * filter isn't silently incomplete before every field has a configured
+     * name), and a field ID with no data at all is absent.
+     */
+    public function test_field_options_prefers_configured_labels_and_falls_back_to_generic()
+    {
+        config(['customerfieldsearch.fields' => [1 => 'Account Number']]);
+
+        $customer = $this->makeCustomer();
+        $this->setCustomerFieldValue($customer->id, 1, 'whatever');
+        $this->setCustomerFieldValue($customer->id, 2, 'whatever');
+
+        $provider = new \Modules\CustomerFieldSearch\Providers\CustomerFieldSearchServiceProvider(app());
+        $method = new \ReflectionMethod($provider, 'fieldOptions');
+        $method->setAccessible(true);
+        $options = $method->invoke($provider);
+
+        $this->assertSame('Account Number', $options[1] ?? null);
+        $this->assertSame('Field #2', $options[2] ?? null);
+        $this->assertArrayNotHasKey(3, $options);
+    }
+
+    /**
+     * "customer_field" must appear in the Filters sidebar list for both
+     * tabs so it's actually reachable/toggleable in the UI (main.js's
+     * toggle is generic off data-filter, but only for names present in this
+     * list to begin with) — and must not be duplicated if another listener
+     * (or a second boot in the same request) already added it.
+     */
+    public function test_filters_list_includes_customer_field_exactly_once()
+    {
+        $conversationsList = \Eventy::filter('search.filters_list', Conversation::$search_filters);
+        $this->assertSame(1, array_count_values($conversationsList)['customer_field'] ?? 0);
+
+        $customersList = \Eventy::filter('search.filters_list_customers', Customer::$search_filters);
+        $this->assertSame(1, array_count_values($customersList)['customer_field'] ?? 0);
+    }
+
+    /**
+     * The rendered filter div itself: reflects the selected option and
+     * carries the right name/value attributes for getSearchFilters() to
+     * pick back up as $filters['customer_field'] on the next request.
+     */
+    public function test_display_filters_action_renders_selected_option()
+    {
+        config(['customerfieldsearch.fields' => [5 => 'Account Number']]);
+
+        $customer = $this->makeCustomer();
+        $this->setCustomerFieldValue($customer->id, 5, 'whatever');
+
+        ob_start();
+        \Eventy::action('search.display_filters', ['customer_field' => 5], [], Conversation::SEARCH_MODE_CONV);
+        $html = ob_get_clean();
+
+        $this->assertStringContainsString('name="f[customer_field]"', $html);
+        $this->assertStringContainsString('Account Number', $html);
+        $this->assertMatchesRegularExpression('/<option value="5"[^>]*selected="selected"[^>]*>Account Number/', $html);
     }
 }
