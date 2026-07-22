@@ -217,6 +217,12 @@ class Conversation extends Model
     protected $dates = ['created_at', 'updated_at', 'last_reply_at', 'closed_at', 'user_updated_at'];
 
     /**
+     * Per-instance memo for hasReplied() (ARMS-36 self-review, 22 Jul) — see
+     * that method's docblock.
+     */
+    protected $hasRepliedCache = null;
+
+    /**
      * Attributes which are not fillable using fill() method.
      */
     protected $guarded = ['id', 'folder_id'];
@@ -1673,13 +1679,61 @@ class Conversation extends Model
      * threls fork patch (ARMS-36): "time ago" for the most recent reply,
      * regardless of folder — distinct from getWaitingSince(), whose
      * underlying field varies by folder (closed_at, updated_at, etc.).
-     * Empty if there's no reply yet (a conversation with only the initial
-     * message never gets a last_reply_at), matching how dateDiffForHumans()
-     * already handles a falsy date rather than inventing a fallback.
+     *
+     * Empty if there's no genuine reply yet. The original assumption here
+     * (a conversation with only the initial message never gets a
+     * last_reply_at) turned out to be wrong: ThreadObserver::created()
+     * stamps last_reply_at on the customer's very first message too, since
+     * last_reply_from starts out null on a brand-new conversation and
+     * null != Conversation::PERSON_CUSTOMER — so the "skip consecutive
+     * customer messages" guard there doesn't catch message #1. Found live
+     * (Omar, 22 Jul): a conversation with zero replies showed a real "17
+     * hours ago" instead of being blank. hasReplied() checks for a genuine
+     * reply thread directly rather than trusting last_reply_at.
      */
     public function getLastReplyAtHuman()
     {
+        if (!$this->hasReplied()) {
+            return '';
+        }
+
         return \App\User::dateDiffForHumans($this->last_reply_at);
+    }
+
+    /**
+     * Whether staff has actually sent a reply at any point — distinct from
+     * last_reply_at/threads_count, both of which the customer's own
+     * messages (and, in threads_count's case, notes) also update, so
+     * neither can answer "has anyone replied" on its own.
+     *
+     * Excludes forwards: a forwarded thread is also stored as
+     * Thread::TYPE_MESSAGE (see ConversationsController::sendForward()),
+     * marked only by subtype == SUBTYPE_FORWARD, and forwarding a
+     * conversation elsewhere isn't a reply to the customer — a
+     * forward-only conversation should still read "No Replies". The
+     * whereNull branch matters: an ordinary reply's subtype is NULL, and
+     * SQL's "column != value" excludes NULL rows, so a plain != check
+     * alone would wrongly exclude every non-forward reply too.
+     *
+     * Memoized per instance (self-review, same day): the conversations
+     * table calls this once in an @if and again inside
+     * getLastReplyAtHuman() for the same row — without caching, every
+     * replied-to row on a folder page ran this query twice.
+     */
+    public function hasReplied()
+    {
+        if ($this->hasRepliedCache === null) {
+            $this->hasRepliedCache = $this->threads()
+                ->where('type', Thread::TYPE_MESSAGE)
+                ->where('state', Thread::STATE_PUBLISHED)
+                ->where(function ($query) {
+                    $query->whereNull('subtype')
+                        ->orWhere('subtype', '!=', Thread::SUBTYPE_FORWARD);
+                })
+                ->exists();
+        }
+
+        return $this->hasRepliedCache;
     }
 
     /**

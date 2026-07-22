@@ -234,9 +234,15 @@
                          shows last_reply_at regardless of folder. No <a> at
                          all when there's no reply yet (matches conv-owner's
                          empty-state pattern) rather than an empty, still-
-                         focusable link with nothing in it. --}}
+                         focusable link with nothing in it. Checks
+                         hasReplied(), not the raw last_reply_at column —
+                         that column also gets stamped by the customer's own
+                         first message (see Conversation::hasReplied()'s
+                         docblock), so trusting it directly showed a real
+                         "X hours ago" on tickets nobody had replied to yet
+                         (found live, Omar, 22 Jul). --}}
                     <td class="conv-last-reply-at">
-                        @if ($conversation->last_reply_at)<a href="{{ $conversation->url() }}" title="{{ \App\User::dateFormat($conversation->last_reply_at) }}" data-toggle="tooltip" data-placement="left" @if (!empty($params['target_blank'])) target="_blank" @endif>{{ $conversation->getLastReplyAtHuman() }}</a>@else &nbsp;@endif
+                        @if ($conversation->hasReplied())<a href="{{ $conversation->url() }}" title="{{ \App\User::dateFormat($conversation->last_reply_at) }}" data-toggle="tooltip" data-placement="left" @if (!empty($params['target_blank'])) target="_blank" @endif>{{ $conversation->getLastReplyAtHuman() }}</a>@else <span class="text-muted">{{ __('No Replies') }}</span>@endif
                     </td>
                 </tr>
                 @action('conversations_table.after_row', $conversation, $columns, $col_counter)
