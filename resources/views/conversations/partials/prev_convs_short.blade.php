@@ -15,6 +15,12 @@
                         @foreach ($prev_conversations as $prev_conversation)
                             <li>
                                 <a href="{{ $prev_conversation->url() }}" target="_blank" class="help-link"><i class="glyphicon @if ($prev_conversation->isPhone()) glyphicon-earphone @else glyphicon-envelope @endif"></i>{{ $prev_conversation->getSubject() }}</a>
+                                <div class="prev-conv-meta">
+                                    <span class="prev-conv-status" style="background-color: {{ $prev_conversation->getStatusColor() }}">{{ $prev_conversation->getStatusName() }}</span>
+                                    @if ($prev_conversation->getLastReplyAtHuman())
+                                        <span class="prev-conv-date">{{ $prev_conversation->getLastReplyAtHuman() }}</span>
+                                    @endif
+                                </div>
                             </li>
                         @endforeach
                     </ul>
