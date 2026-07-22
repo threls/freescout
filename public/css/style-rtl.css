@@ -49,6 +49,11 @@ ul.sidebar-block-list {
     margin-right: 0;
 }
 
+.prev-conv-meta {
+    margin-right: 20px;
+    margin-left: 0;
+}
+
 .thread-photo {
     left: 0;
 }

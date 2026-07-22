@@ -2667,6 +2667,23 @@ ul.sidebar-block-list {
     position: relative;
     top: 2px;
 }
+.prev-conv-meta {
+    margin: -2px 0 5px 20px;
+    line-height: 1.4;
+}
+.prev-conv-status {
+    display: inline-block;
+    color: #fff;
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: 2px;
+    margin-right: 6px;
+}
+.prev-conv-date {
+    color: #8b98a6;
+    font-size: 11px;
+}
 .conv-sidebar-block .panel-body {
     border-top: 0!important;
     padding-top: 0;
