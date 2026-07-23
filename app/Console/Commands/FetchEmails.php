@@ -1154,7 +1154,12 @@ class FetchEmails extends Command
 
         // Customers are created before with email and name
         $customer = Customer::create($from);
-        if ($prev_thread) {
+        // threls fork patch (ARMS-21): a reply to a Solved conversation older than the
+        // configured reopen window should start a NEW ticket instead of reopening the old
+        // one. Core reopens unconditionally; the SolvedReopenWindow module answers this
+        // filter. Default true preserves core's behaviour when the module is absent, so
+        // $prev_thread is only treated as "no match" when a module explicitly opts out.
+        if ($prev_thread && \Eventy::filter('conversation.should_reopen', true, $prev_thread->conversation)) {
             $conversation = $prev_thread->conversation;
 
             // If reply came from another customer: change customer, add original as CC.
