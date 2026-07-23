@@ -26,8 +26,16 @@ spans the full record, not just the line-items:
 
 The performer is resolved in the Agent column via `actorName()` — the agent for
 user actions, the customer for inbound replies, a dash for system/automatic
-ones. Import line-items are omitted from the Action dropdown but still appear
-under "Any action".
+ones, with an avatar showing their initials. Each row also gets a small
+coloured dot (`eventColor()`) so the kind of event reads at a glance without
+parsing the sentence: the ticket's new status colour for status changes
+(falling back to amber for custom statuses like On-Hold that aren't in core's
+colour map), and a fixed hue per event kind otherwise. The Action text itself
+strips the row's own redundant "conversation #N" reference via
+`actionLabel()`, since the Ticket column already shows it — a merge's
+reference to the *other*, target conversation's number is deliberately kept.
+Import line-items are omitted from the Action dropdown but still appear under
+"Any action".
 
 ## Filters
 
@@ -80,10 +88,21 @@ indexes.
 
 ## Known limits / follow-ups
 
-- The listing renders the action as plain text; the coloured status *pills*
-  from the client mockup are a visual follow-up, not built here.
 - `ACTION_TYPE_MERGED` rows resolve their merge target lazily inside
   `getActionText()`; fine at 20/page, and the CSV export chunks at 500 rows.
 - Date filters must stay within the MySQL `TIMESTAMP` range (< 2038-01-19),
   since `threads.created_at` is a TIMESTAMP column. Realistic (past/present)
   audit dates are always fine; the default window is the last 30 days.
+
+## Ticket-number filter uses `Conversation::numberFieldName()`, not the raw column
+
+`Conversation::number` is an accessor, not a plain column read: it returns the
+raw `number` column only when `config('app.custom_number')` is enabled, and
+`$conversation->id` otherwise (the default, and what this environment
+actually runs). Filtering the Ticket # box against a hardcoded `'number'`
+column would silently stop matching real ticket numbers whenever custom
+numbering is off, since the number a user sees and types is the id, not that
+column's value. `AuditQuery::builder()` matches against
+`Conversation::numberFieldName()` instead, the same helper core's own
+`ConversationsController` and `Conversation::search()` use for this exact
+lookup.

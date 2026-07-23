@@ -2,6 +2,7 @@
 
 namespace Modules\AuditLog\Services;
 
+use App\Conversation;
 use App\Thread;
 use App\User;
 
@@ -102,7 +103,14 @@ class AuditQuery
                 $c->where('mailbox_id', $mailbox_id);
             }
             if ($ticket) {
-                $c->where('number', $ticket);
+                // Ticket numbers displayed to users are $conversation->number,
+                // which is an accessor: it returns the raw `number` column
+                // only when app.custom_number is enabled, and `id` otherwise
+                // (the default). numberFieldName() is core's own helper for
+                // matching against whichever one is actually in effect —
+                // hardcoding 'number' here would silently stop matching real
+                // ticket numbers whenever custom numbering is off.
+                $c->where(Conversation::numberFieldName(), $ticket);
             }
             if ($restrict_ids !== null) {
                 $c->whereIn('mailbox_id', $restrict_ids);
@@ -196,7 +204,71 @@ class AuditQuery
         $text = $thread->getActionText($number, false, true);
         $text = str_replace(':person', '', $text);
 
+        // Drop the row's own "conversation #N" self-reference — the Ticket
+        // column already shows it — while keeping references to *other*
+        // conversations (e.g. a merge target has a different number).
+        if ($number !== '' && $number !== null) {
+            $n = preg_quote($number, '/');
+            $text = preg_replace('/\s*(to|into|in|for|a new)?\s*conversation #'.$n.'\b/i', '', $text);
+            $text = preg_replace('/\s*#'.$n.'\b/', '', $text);
+        }
+
         return trim(preg_replace('/\s{2,}/', ' ', $text));
+    }
+
+    /**
+     * A colour for the event's left indicator — the ticket's new status colour
+     * for status changes, otherwise a fixed hue per event kind. Purely visual.
+     */
+    public static function eventColor(Thread $thread)
+    {
+        if ($thread->type == Thread::TYPE_LINEITEM) {
+            switch ($thread->action_type) {
+                case Thread::ACTION_TYPE_STATUS_CHANGED:   return self::statusColor($thread);
+                case Thread::ACTION_TYPE_USER_CHANGED:     return '#4a90d9'; // assign
+                case Thread::ACTION_TYPE_MERGED:           return '#9b6dc6';
+                case Thread::ACTION_TYPE_MOVED_FROM_MAILBOX: return '#3aa5a0';
+                case Thread::ACTION_TYPE_CUSTOMER_CHANGED: return '#d99a2b';
+                case Thread::ACTION_TYPE_DELETED_TICKET:   return '#de6864';
+                case Thread::ACTION_TYPE_RESTORE_TICKET:   return '#6ac27b';
+                default:                                   return '#8b98a6';
+            }
+        }
+        if ($thread->type == Thread::TYPE_NOTE) {
+            return '#d99a2b'; // internal note
+        }
+        if ($thread->first) {
+            return '#4a90d9'; // creation
+        }
+
+        return '#8b98a6'; // reply
+    }
+
+    /**
+     * The new status's colour for a status-change line-item, falling back to
+     * amber for custom statuses (e.g. On-Hold) not in the core map.
+     */
+    public static function statusColor(Thread $thread)
+    {
+        $colors = Conversation::$status_colors;
+
+        return isset($colors[$thread->status]) ? $colors[$thread->status] : '#d99a2b';
+    }
+
+    /**
+     * Up-to-two-letter initials for the actor avatar.
+     */
+    public static function initials($name)
+    {
+        $name = trim((string) $name);
+        if ($name === '' || $name === '—') {
+            return '·';
+        }
+        $parts = preg_split('/\s+/', $name);
+        $first = mb_substr($parts[0], 0, 1);
+        $last = count($parts) > 1 ? mb_substr($parts[count($parts) - 1], 0, 1) : '';
+
+        return mb_strtoupper($first.$last);
     }
 
     /**
