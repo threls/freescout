@@ -1564,8 +1564,17 @@ function initAttachmentGalleries()
 	// to a message with an "Open in New Tab" link instead of leaving a blank modal.
 	$.featherlight.contentFilters.iframe = {
 		process: function(url) {
+			var instance = this;
+			// If the gallery navigates to another slide before this one settles,
+			// $currentTarget will have moved on by the time we're ready to resolve.
+			// Bail out instead of overwriting whatever slide the user is on by then.
+			var expectedTarget = instance.$currentTarget;
+			function isStale() {
+				return instance.$currentTarget !== expectedTarget;
+			}
+
 			var deferred = $.Deferred();
-			var $container = this.$instance.find('.featherlight-content');
+			var $container = instance.$instance.find('.featherlight-content');
 			var $iframe = $('<iframe/>').hide().attr('src', url);
 			var $fallback = $('<div class="attachment-preview-fallback"></div>').hide().append(
 				$('<p></p>').text(Lang.get('messages.preview_unavailable')),
@@ -1581,6 +1590,10 @@ function initAttachmentGalleries()
 				}
 				settled = true;
 				$iframe.remove();
+				if (isStale()) {
+					$fallback.remove();
+					return;
+				}
 				deferred.resolve($fallback.show());
 			}, 6000);
 
@@ -1591,6 +1604,10 @@ function initAttachmentGalleries()
 				settled = true;
 				clearTimeout(timer);
 				$fallback.remove();
+				if (isStale()) {
+					$iframe.remove();
+					return;
+				}
 				deferred.resolve($iframe.show());
 			});
 
@@ -1619,8 +1636,12 @@ function initAttachmentGalleries()
 			);
 	};
 
-	$('.thread-attachments').each(function(){
-		$(this).featherlightGallery({
+	// Guard against double-binding if this ever gets called more than once for
+	// the same page (e.g. a future ajax refresh) - each container only gets a
+	// gallery attached once, and the document-level handler is re-bound under
+	// its own namespace instead of stacking another copy.
+	$('.thread-attachments').not('[data-attachment-gallery-bound]').each(function(){
+		$(this).attr('data-attachment-gallery-bound', '1').featherlightGallery({
 			filter: 'a.attachment-preview',
 			// Use our own attribute so featherlight's global auto-bind (which
 			// watches [data-featherlight]) doesn't also grab these links and
@@ -1629,7 +1650,7 @@ function initAttachmentGalleries()
 		});
 	});
 
-	$(document).on('click', '.attachment-view-all', function(e){
+	$(document).off('click.attachmentViewAll').on('click.attachmentViewAll', '.attachment-view-all', function(e){
 		e.preventDefault();
 		$(this).closest('.thread-attachments').find('a.attachment-preview').first().trigger('click');
 	});
