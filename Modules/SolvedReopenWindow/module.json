@@ -1,7 +1,7 @@
 {
     "name": "SolvedReopenWindow",
     "alias": "solvedreopenwindow",
-    "description": "Solved -> N-day reopen window, then a new ticket (ARMS-21). A customer reply within N days of a ticket being Solved reopens the same ticket; after N days a reply starts a brand-new ticket. Answers the conversation.should_reopen filter carried on the threls fork (FetchEmails::saveCustomerThread).",
+    "description": "Reopens a solved conversation when the customer replies within a configurable number of days. After that window, a reply starts a new conversation instead of reopening the old one.",
     "version": "1.0.0",
     "detailsUrl": "",
     "img": "/modules/solvedreopenwindow/img/icon.svg",
