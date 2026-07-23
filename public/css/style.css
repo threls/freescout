@@ -4621,3 +4621,39 @@ a.disabled:focus {
         display: none;
     }
 }
+/**
+ * Attachment preview modal (featherlight).
+ */
+.thread-attachments li.attachment-view-all-item {
+    border: 1px solid #d3dae0;
+}
+.thread-attachments a.attachment-view-all {
+    font-weight: 600;
+}
+.attachment-modal-header {
+    padding: 8px 40px 8px 15px;
+    border-bottom: 1px solid #e5e5e5;
+    font-weight: 600;
+    word-break: break-word;
+}
+.attachment-modal-footer {
+    padding: 10px 15px;
+    text-align: right;
+    border-top: 1px solid #e5e5e5;
+}
+.featherlight-iframe .featherlight-content {
+    width: 90vw;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+.featherlight-iframe .featherlight-content > iframe {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+}
+.attachment-preview-fallback {
+    padding: 30px;
+    text-align: center;
+    min-width: 260px;
+}
