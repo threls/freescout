@@ -381,6 +381,80 @@ class AuditLogTest extends TestCase
         $this->assertStringContainsString((string) $targetNumber, $mergeLabel);
     }
 
+    public function test_action_html_renders_a_status_pill_in_the_status_own_colour()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_STATUS_CHANGED, [
+            'created_by_user_id' => $admin->id, 'status' => Thread::STATUS_PENDING,
+        ]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringContainsString('al-pill', $html);
+        $this->assertStringContainsString(\App\Conversation::$status_colors[\App\Conversation::STATUS_PENDING], $html);
+        $this->assertStringContainsString($thread->getStatusName(), $html);
+    }
+
+    public function test_action_html_bolds_the_assignee_name()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $assignee = $this->makeUser(User::ROLE_USER);
+        $assignee->first_name = 'Zzxafirst'; $assignee->last_name = 'Zzxalast'; $assignee->save();
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_USER_CHANGED, [
+            'created_by_user_id' => $admin->id, 'user_id' => $assignee->id,
+        ]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringContainsString('<strong>Zzxafirst Zzxalast</strong>', $html);
+    }
+
+    public function test_action_html_bolds_the_customer_name_and_escapes_it()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $customer = factory(\App\Customer::class)->create(['first_name' => '<script>x</script>', 'last_name' => 'Zzxalast']);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_CUSTOMER_CHANGED, [
+            // 'to' sidesteps a pre-existing ThreadFactory gap: passing
+            // customer_id without it hits an undefined-$customer branch.
+            // A literal address, not $customer->getMainEmail() — the
+            // customer factory never attaches an emails row, so that
+            // would itself be empty and trip the very same gap.
+            'created_by_user_id' => $admin->id, 'customer_id' => $customer->id, 'to' => 'audit-test@example.com',
+        ]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringContainsString('<strong>', $html);
+        // The customer's own name is escaped, so a literal <script> in it
+        // can never break out of the surrounding markup.
+        $this->assertStringNotContainsString('<script>x</script>', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+    }
+
+    public function test_action_html_falls_back_to_plain_label_for_other_events()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_RESTORE_TICKET, ['created_by_user_id' => $admin->id]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringNotContainsString('al-pill', $html);
+        $this->assertStringNotContainsString('<strong>', $html);
+        $this->assertEquals(\Modules\AuditLog\Services\AuditQuery::actionLabel($thread), $html);
+    }
+
     // ---- Controller wiring ------------------------------------------------
     // Full-page HTTP GETs can't be asserted in this CLI harness (FreeScout's
     // ResponseHeaders middleware calls header() after PHPUnit has emitted

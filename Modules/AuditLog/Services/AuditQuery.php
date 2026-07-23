@@ -81,7 +81,7 @@ class AuditQuery
                 });
         })
             ->whereBetween('threads.created_at', [$f->from, $f->to])
-            ->with(['created_by_user_cached', 'created_by_customer', 'conversation.mailbox'])
+            ->with(['created_by_user_cached', 'created_by_customer', 'customer_cached', 'user', 'conversation.mailbox'])
             ->orderBy('threads.created_at', 'desc')
             ->orderBy('threads.id', 'desc');
 
@@ -217,42 +217,56 @@ class AuditQuery
     }
 
     /**
-     * A colour for the event's left indicator — the ticket's new status colour
-     * for status changes, otherwise a fixed hue per event kind. Purely visual.
-     */
-    public static function eventColor(Thread $thread)
-    {
-        if ($thread->type == Thread::TYPE_LINEITEM) {
-            switch ($thread->action_type) {
-                case Thread::ACTION_TYPE_STATUS_CHANGED:   return self::statusColor($thread);
-                case Thread::ACTION_TYPE_USER_CHANGED:     return '#4a90d9'; // assign
-                case Thread::ACTION_TYPE_MERGED:           return '#9b6dc6';
-                case Thread::ACTION_TYPE_MOVED_FROM_MAILBOX: return '#3aa5a0';
-                case Thread::ACTION_TYPE_CUSTOMER_CHANGED: return '#d99a2b';
-                case Thread::ACTION_TYPE_DELETED_TICKET:   return '#de6864';
-                case Thread::ACTION_TYPE_RESTORE_TICKET:   return '#6ac27b';
-                default:                                   return '#8b98a6';
-            }
-        }
-        if ($thread->type == Thread::TYPE_NOTE) {
-            return '#d99a2b'; // internal note
-        }
-        if ($thread->first) {
-            return '#4a90d9'; // creation
-        }
-
-        return '#8b98a6'; // reply
-    }
-
-    /**
-     * The new status's colour for a status-change line-item, falling back to
-     * amber for custom statuses (e.g. On-Hold) not in the core map.
+     * The new status's colour for a status-change line-item, sourced from
+     * Conversation::$status_colors — the same live map core and other
+     * modules register into (e.g. OnHoldStatus adds its own amber entry),
+     * so a pill always matches whatever colour that status actually renders
+     * with elsewhere, including any custom status added later. Falls back
+     * to a neutral amber if a status somehow isn't registered.
      */
     public static function statusColor(Thread $thread)
     {
         $colors = Conversation::$status_colors;
 
         return isset($colors[$thread->status]) ? $colors[$thread->status] : '#d99a2b';
+    }
+
+    /**
+     * Safe HTML for the Action cell: a coloured pill for the new status on a
+     * status change, and a bold name for an assignment or customer change —
+     * matching the visual language agreed with ARMS — falling back to the
+     * plain, native-wording label (via actionLabel()) for every other event.
+     * Every dynamic piece is escaped; the surrounding markup is static.
+     */
+    public static function actionHtml(Thread $thread)
+    {
+        if ($thread->type == Thread::TYPE_LINEITEM) {
+            switch ($thread->action_type) {
+                case Thread::ACTION_TYPE_STATUS_CHANGED:
+                    return e(__('marked as')).' '.self::statusPillHtml($thread);
+                case Thread::ACTION_TYPE_USER_CHANGED:
+                    return e(__('assigned')).' <strong>'.e($thread->getAssigneeName(false)).'</strong>';
+                case Thread::ACTION_TYPE_CUSTOMER_CHANGED:
+                    $customer_name = $thread->customer_cached ? $thread->customer_cached->getFullName(true) : '';
+
+                    return e(__('changed the customer to')).' <strong>'.e($customer_name).'</strong>';
+            }
+        }
+
+        return e(self::actionLabel($thread));
+    }
+
+    /**
+     * A soft pill for a status name: solid-colour text on a light tint of
+     * that same colour, so it reads as "coloured" without core's harsher
+     * solid-background/white-text tag style.
+     */
+    protected static function statusPillHtml(Thread $thread)
+    {
+        $color = self::statusColor($thread);
+        $name = e($thread->getStatusName());
+
+        return '<span class="al-pill" style="color: '.$color.'; background: '.$color.'22;">'.$name.'</span>';
     }
 
     /**

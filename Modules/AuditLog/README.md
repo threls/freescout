@@ -26,16 +26,21 @@ spans the full record, not just the line-items:
 
 The performer is resolved in the Agent column via `actorName()` — the agent for
 user actions, the customer for inbound replies, a dash for system/automatic
-ones, with an avatar showing their initials. Each row also gets a small
-coloured dot (`eventColor()`) so the kind of event reads at a glance without
-parsing the sentence: the ticket's new status colour for status changes
-(falling back to amber for custom statuses like On-Hold that aren't in core's
-colour map), and a fixed hue per event kind otherwise. The Action text itself
-strips the row's own redundant "conversation #N" reference via
-`actionLabel()`, since the Ticket column already shows it — a merge's
-reference to the *other*, target conversation's number is deliberately kept.
-Import line-items are omitted from the Action dropdown but still appear under
-"Any action".
+ones — with an avatar showing their initials. The Action column, built by
+`actionHtml()`, matches the visual language agreed with ARMS: a status change
+renders as "marked as" plus a soft coloured pill (light tint of the status's
+own colour, solid-colour text), and an assignment or customer change bolds the
+new assignee/customer name. Every other event falls back to the plain, native
+wording via `actionLabel()`, which strips the row's own redundant
+"conversation #N" reference (the Ticket column already shows it) while
+keeping a merge's reference to the *other*, target conversation intact. Import
+line-items are omitted from the Action dropdown but still appear under "Any
+action".
+
+The left sidebar (matching the admin Logs page's own sidebar pattern) offers
+three one-click shortcuts — **Merges**, **Assignments**, **Status changes** —
+each just a bookmark to this same page pre-filtered by `action_type`; **Ticket
+Activity** resets to the unfiltered view.
 
 ## Filters
 
@@ -85,6 +90,15 @@ two guarded, idempotent composite indexes to `threads`:
 `action_type` / `created_by_user_id`, so without these the cross-ticket query
 would full-scan. Mailbox/ticket filters ride on `conversations`' existing
 indexes.
+
+## Status pill colour
+
+`AuditQuery::statusColor()` reads `Conversation::$status_colors` directly —
+the same live, mutable map core and other modules register into (OnHoldStatus
+inserts its own `#f39c12` entry for status 5 at boot). This means the pill
+always matches whatever colour that status renders with everywhere else in
+the app, including a custom status added after this module was written,
+without a parallel colour list of its own to fall out of sync.
 
 ## Known limits / follow-ups
 
