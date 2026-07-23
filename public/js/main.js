@@ -1551,6 +1551,90 @@ function processLinks()
 	$('.thread-content a').attr('target', '_blank');
 }
 
+// Open previewable attachments (images, PDFs) in a modal instead of a new tab,
+// with gallery navigation when a thread has more than one previewable attachment.
+function initAttachmentGalleries()
+{
+	if (typeof $.fn.featherlightGallery == 'undefined') {
+		return;
+	}
+
+	// Some file types (e.g. PDF) rely on the browser's native viewer plugin to render
+	// inside an iframe. If it never fires "load" (plugin missing/blocked), fall back
+	// to a message with an "Open in New Tab" link instead of leaving a blank modal.
+	$.featherlight.contentFilters.iframe = {
+		process: function(url) {
+			var deferred = $.Deferred();
+			var $container = this.$instance.find('.featherlight-content');
+			var $iframe = $('<iframe/>').hide().attr('src', url);
+			var $fallback = $('<div class="attachment-preview-fallback"></div>').hide().append(
+				$('<p></p>').text(Lang.get('messages.preview_unavailable')),
+				$('<a class="btn btn-default btn-sm" target="_blank" rel="noopener noreferrer"></a>').attr('href', url).text(Lang.get('messages.open_in_new_tab'))
+			);
+
+			$container.append($iframe).append($fallback);
+
+			var settled = false;
+			var timer = setTimeout(function() {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				$iframe.remove();
+				deferred.resolve($fallback.show());
+			}, 6000);
+
+			$iframe.on('load', function() {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timer);
+				$fallback.remove();
+				deferred.resolve($iframe.show());
+			});
+
+			return deferred.promise();
+		}
+	};
+
+	$.featherlight.defaults.afterContent = function() {
+		var $target = this.$currentTarget;
+
+		this.$instance.find('.attachment-modal-header, .attachment-modal-footer').remove();
+
+		if (!$target || !$target.hasClass('attachment-preview')) {
+			return;
+		}
+
+		var file_name = $target.text();
+		var download_url = $target.attr('href');
+
+		this.$instance.find('.featherlight-content')
+			.prepend($('<div class="attachment-modal-header"></div>').text(file_name))
+			.append(
+				$('<div class="attachment-modal-footer"></div>').append(
+					$('<a class="btn btn-primary btn-xs" download></a>').attr('href', download_url).text(Lang.get('messages.download'))
+				)
+			);
+	};
+
+	$('.thread-attachments').each(function(){
+		$(this).featherlightGallery({
+			filter: 'a.attachment-preview',
+			// Use our own attribute so featherlight's global auto-bind (which
+			// watches [data-featherlight]) doesn't also grab these links and
+			// open a second, non-gallery instance alongside this one.
+			targetAttr: 'data-preview-type'
+		});
+	});
+
+	$(document).on('click', '.attachment-view-all', function(e){
+		e.preventDefault();
+		$(this).closest('.thread-attachments').find('a.attachment-preview').first().trigger('click');
+	});
+}
+
 // Get current conversation assignee
 function getConvData(field)
 {

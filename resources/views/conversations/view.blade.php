@@ -368,4 +368,5 @@
     @parent
     initReplyForm();
     initConversation();
+    initAttachmentGalleries();
 @endsection
