@@ -26,6 +26,44 @@
 
 <div class="container">
 
+    {{-- ARMS-25: server-side filters over the whole log. --}}
+    <form method="GET" action="{{ route('logs', ['name' => $current_name]) }}" class="form-inline margin-bottom">
+        @if ($current_name != App\ActivityLog::NAME_OUT_EMAILS)
+            <div class="form-group">
+                <label>{{ __('User') }}&nbsp;</label>
+                <select name="f_user" class="form-control input-sm">
+                    <option value="">{{ __('Any user') }}</option>
+                    @foreach ($log_users as $log_user)
+                        <option value="{{ $log_user->id }}" @if ($filters['f_user'] == $log_user->id) selected @endif>{{ $log_user->getFullName() }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="form-group" style="margin-left: 10px;">
+                <label>{{ __('Event') }}&nbsp;</label>
+                <select name="f_event" class="form-control input-sm">
+                    <option value="">{{ __('Any event') }}</option>
+                    @foreach ($event_options as $value => $label)
+                        <option value="{{ $value }}" @if ($filters['f_event'] === $value) selected @endif>{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
+        <div class="form-group" style="margin-left: 10px;">
+            <label>{{ __('From') }}&nbsp;</label>
+            <input type="date" name="f_from" class="form-control input-sm" value="{{ $filters['f_from'] }}" />
+        </div>
+        <div class="form-group" style="margin-left: 10px;">
+            <label>{{ __('To') }}&nbsp;</label>
+            <input type="date" name="f_to" class="form-control input-sm" value="{{ $filters['f_to'] }}" />
+        </div>
+        <div class="form-group" style="margin-left: 10px;">
+            <label>{{ __('Search') }}&nbsp;</label>
+            <input type="text" name="f_q" class="form-control input-sm" value="{{ $filters['f_q'] }}" placeholder="@if ($current_name != App\ActivityLog::NAME_OUT_EMAILS){{ __('Event, IP…') }}@else{{ __('Email…') }}@endif" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-left: 10px;">{{ __('Filter') }}</button>
+        <a href="{{ route('logs', ['name' => $current_name]) }}" class="btn btn-default btn-sm">{{ __('Reset') }}</a>
+    </form>
+
     @if (count($logs))
         <table id="table-logs" class="stripe hover order-column row-border" style="width:100%">
             <thead>
