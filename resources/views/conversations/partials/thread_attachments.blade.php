@@ -17,7 +17,15 @@
                 // svg is deliberately excluded from $previewable_ext above (it's
                 // forced to download server-side to avoid an XSS vector), so no
                 // separate svg check is needed here.
-                'is_image' => in_array($ext, $previewable_ext) && $attachment->type == \App\Attachment::TYPE_IMAGE,
+                //
+                // Determined by extension, not $attachment->type: that column comes
+                // from the mail library's own classification at ingestion time and
+                // is unreliable for real-world attachments (e.g. phone photos
+                // forwarded via WhatsApp/email with a generic Content-Type). A
+                // wrong non-image classification here sends a genuine image
+                // through the iframe preview path instead of img, which trips the
+                // attachment CSP's sandbox restriction in the browser.
+                'is_image' => in_array($ext, $previewable_ext) && $ext != 'pdf',
                 'is_previewable' => in_array($ext, $previewable_ext),
             ];
         });
