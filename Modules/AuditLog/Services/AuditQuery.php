@@ -216,19 +216,33 @@ class AuditQuery
         return trim(preg_replace('/\s{2,}/', ' ', $text));
     }
 
+    /** Neutral fallback used whenever a status has no usable registered colour. */
+    const DEFAULT_STATUS_COLOR = '#d99a2b';
+
     /**
      * The new status's colour for a status-change line-item, sourced from
      * Conversation::$status_colors — the same live map core and other
      * modules register into (e.g. OnHoldStatus adds its own amber entry),
      * so a pill always matches whatever colour that status actually renders
-     * with elsewhere, including any custom status added later. Falls back
-     * to a neutral amber if a status somehow isn't registered.
+     * with elsewhere, including any custom status added later. Falls back to
+     * a neutral amber if a status isn't registered, or if it's registered
+     * with something other than a plain 6-digit hex value — statusPillHtml()
+     * appends an alpha channel directly onto this string (e.g. '#f39c12' ->
+     * '#f39c1222'), which only produces valid CSS for that exact shape; a
+     * future status registered as a CSS keyword or rgb() string would
+     * otherwise silently lose both its text and background colour.
      */
     public static function statusColor(Thread $thread)
     {
         $colors = Conversation::$status_colors;
+        $color = $colors[$thread->status] ?? null;
 
-        return isset($colors[$thread->status]) ? $colors[$thread->status] : '#d99a2b';
+        return self::isHexColor($color) ? $color : self::DEFAULT_STATUS_COLOR;
+    }
+
+    protected static function isHexColor($color)
+    {
+        return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color);
     }
 
     /**
@@ -263,7 +277,10 @@ class AuditQuery
      */
     protected static function statusPillHtml(Thread $thread)
     {
-        $color = self::statusColor($thread);
+        // statusColor() already guarantees a 6-digit hex string, but every
+        // other dynamic value in this class is escaped before reaching HTML
+        // — escape this one too rather than leaving it the one exception.
+        $color = e(self::statusColor($thread));
         $name = e($thread->getStatusName());
 
         return '<span class="al-pill" style="color: '.$color.'; background: '.$color.'22;">'.$name.'</span>';

@@ -244,6 +244,54 @@ class AuditLogTest extends TestCase
         $this->assertEquals([$byA_conv2->id], $ids);
     }
 
+    /**
+     * The ticket-number fix this PR makes is that the filter matches
+     * Conversation::numberFieldName() rather than a hardcoded 'number'
+     * column — numberFieldName() returns 'id' when app.custom_number is
+     * off (the default, covered by the test above) and 'number' when it's
+     * on. This test proves the other branch: with custom numbering
+     * enabled, the id is NOT the displayed ticket number, and filtering
+     * must match the raw `number` column instead.
+     */
+    public function test_ticket_filter_matches_raw_number_column_when_custom_numbering_enabled()
+    {
+        $originalConfig = config('app.custom_number');
+        $originalCache = Conversation::$custom_number_cache;
+
+        try {
+            config(['app.custom_number' => true]);
+            Conversation::$custom_number_cache = null; // force re-read of the config just set
+
+            $admin = $this->makeUser(User::ROLE_ADMIN);
+            $mailbox = $this->makeMailbox();
+            $folder = $this->makeFolder($mailbox->id);
+            $conv = $this->makeConversation($mailbox->id, $folder->id);
+
+            // Conversation::boot()'s creating() hook always sets number to
+            // max(number)+1, ignoring any factory override, so force a raw
+            // column value guaranteed different from the id via a direct
+            // update rather than relying on the factory.
+            $customNumber = $conv->id + 999000;
+            \DB::table('conversations')->where('id', $conv->id)->update(['number' => $customNumber]);
+
+            $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_STATUS_CHANGED, ['created_by_user_id' => $admin->id]);
+            $mb = ['mailbox_id' => $mailbox->id];
+
+            // The id is not the displayed number in this mode — filtering by
+            // it must not match.
+            $idsById = $this->runQuery($admin, $mb + ['ticket' => $conv->id])->pluck('id')->all();
+            $this->assertEmpty($idsById);
+
+            // The raw `number` column is the displayed number — filtering by
+            // it must match.
+            $idsByNumber = $this->runQuery($admin, $mb + ['ticket' => $customNumber])->pluck('id')->all();
+            $this->assertEquals([$thread->id], $idsByNumber);
+        } finally {
+            config(['app.custom_number' => $originalConfig]);
+            Conversation::$custom_number_cache = $originalCache;
+        }
+    }
+
     public function test_filters_by_date_range()
     {
         $admin = $this->makeUser(User::ROLE_ADMIN);
