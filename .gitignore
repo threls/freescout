@@ -34,6 +34,7 @@ Thumbs.db
 !/Modules/CustomerFieldSearch
 !/Modules/ArmsReports
 !/Modules/ActiveToNewLabel
+!/Modules/SolvedReopenWindow
 /public/modules
 /public/docs
 /public/.dh-diag
