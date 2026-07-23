@@ -154,4 +154,33 @@ class SolvedReopenWindowTest extends TestCase
         $this->assertSame($conversation->id, $thread->conversation_id);
         $this->assertSame(Conversation::STATUS_ACTIVE, (int) $conversation->fresh()->status);
     }
+
+    /**
+     * The real ARMS-20 path: a Workflows auto-solve has no acting user, so
+     * closed_at is left null (Conversation::setStatus guards on $user). The
+     * module must fall back to updated_at and still start a new ticket past the
+     * window. Only unit-tested before — this drives it through saveCustomerThread.
+     */
+    public function test_reply_past_window_starts_new_ticket_when_closed_at_is_null()
+    {
+        Event::fake();
+        $this->bootModule();
+
+        [$mailbox, $conversation, $prevThread, $email] = $this->makeSolvedConversation(30);
+        // Mimic the auto-solve: no closed_at, but the row was last written
+        // (solved) 30 days ago.
+        \DB::table('conversations')->where('id', $conversation->id)->update([
+            'closed_at'  => null,
+            'updated_at' => now()->subDays(30)->toDateTimeString(),
+        ]);
+        $conversation = $conversation->fresh();
+        $this->assertNull($conversation->closed_at, 'sanity: this test only means something with a null closed_at');
+
+        $before = Conversation::where('mailbox_id', $mailbox->id)->count();
+        $thread = $this->deliverReply($mailbox, $prevThread, $email);
+
+        $this->assertSame($before + 1, Conversation::where('mailbox_id', $mailbox->id)->count());
+        $this->assertNotSame($conversation->id, $thread->conversation_id);
+        $this->assertSame(Conversation::STATUS_CLOSED, (int) $conversation->fresh()->status);
+    }
 }
