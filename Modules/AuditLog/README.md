@@ -26,8 +26,21 @@ spans the full record, not just the line-items:
 
 The performer is resolved in the Agent column via `actorName()` — the agent for
 user actions, the customer for inbound replies, a dash for system/automatic
-ones. Import line-items are omitted from the Action dropdown but still appear
-under "Any action".
+ones — with an avatar showing their initials. The Action column, built by
+`actionHtml()`, matches the visual language agreed with ARMS: a status change
+renders as "marked as" plus a soft coloured pill (light tint of the status's
+own colour, solid-colour text), and an assignment or customer change bolds the
+new assignee/customer name. Every other event falls back to the plain, native
+wording via `actionLabel()`, which strips the row's own redundant
+"conversation #N" reference (the Ticket column already shows it) while
+keeping a merge's reference to the *other*, target conversation intact. Import
+line-items are omitted from the Action dropdown but still appear under "Any
+action".
+
+The left sidebar (matching the admin Logs page's own sidebar pattern) offers
+three one-click shortcuts — **Merges**, **Assignments**, **Status changes** —
+each just a bookmark to this same page pre-filtered by `action_type`; **Ticket
+Activity** resets to the unfiltered view.
 
 ## Filters
 
@@ -78,12 +91,32 @@ two guarded, idempotent composite indexes to `threads`:
 would full-scan. Mailbox/ticket filters ride on `conversations`' existing
 indexes.
 
+## Status pill colour
+
+`AuditQuery::statusColor()` reads `Conversation::$status_colors` directly —
+the same live, mutable map core and other modules register into (OnHoldStatus
+inserts its own `#f39c12` entry for status 5 at boot). This means the pill
+always matches whatever colour that status renders with everywhere else in
+the app, including a custom status added after this module was written,
+without a parallel colour list of its own to fall out of sync.
+
 ## Known limits / follow-ups
 
-- The listing renders the action as plain text; the coloured status *pills*
-  from the client mockup are a visual follow-up, not built here.
 - `ACTION_TYPE_MERGED` rows resolve their merge target lazily inside
   `getActionText()`; fine at 20/page, and the CSV export chunks at 500 rows.
 - Date filters must stay within the MySQL `TIMESTAMP` range (< 2038-01-19),
   since `threads.created_at` is a TIMESTAMP column. Realistic (past/present)
   audit dates are always fine; the default window is the last 30 days.
+
+## Ticket-number filter uses `Conversation::numberFieldName()`, not the raw column
+
+`Conversation::number` is an accessor, not a plain column read: it returns the
+raw `number` column only when `config('app.custom_number')` is enabled, and
+`$conversation->id` otherwise (the default, and what this environment
+actually runs). Filtering the Ticket # box against a hardcoded `'number'`
+column would silently stop matching real ticket numbers whenever custom
+numbering is off, since the number a user sees and types is the id, not that
+column's value. `AuditQuery::builder()` matches against
+`Conversation::numberFieldName()` instead, the same helper core's own
+`ConversationsController` and `Conversation::search()` use for this exact
+lookup.

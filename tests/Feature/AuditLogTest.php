@@ -139,6 +139,18 @@ class AuditLogTest extends TestCase
         return \Modules\AuditLog\Services\AuditFilters::fromRequest(new Request($params));
     }
 
+    /**
+     * The ticket number as a user would actually see and type it:
+     * Conversation::number is an accessor that returns the raw `number`
+     * column only when app.custom_number is enabled, and the id otherwise
+     * (the default in this test environment) — reading the raw column
+     * directly would test against a value nobody ever sees.
+     */
+    protected function displayNumber(Conversation $conversation)
+    {
+        return Conversation::find($conversation->id)->number;
+    }
+
     protected function runQuery(User $viewer, array $params = [])
     {
         // Widen the default 30-day window so seeded rows aren't filtered out
@@ -226,11 +238,58 @@ class AuditLogTest extends TestCase
         $ids = $this->runQuery($admin, $mb + ['action_type' => Thread::ACTION_TYPE_USER_CHANGED])->pluck('id')->all();
         $this->assertEquals([$byB->id], $ids);
 
-        // Ticket-number filter (exact), tolerant of a leading '#'. Read the
-        // stored number rather than trusting the in-memory instance.
-        $num = \DB::table('conversations')->where('id', $conv2->id)->value('number');
+        // Ticket-number filter (exact), tolerant of a leading '#'.
+        $num = $this->displayNumber($conv2);
         $ids = $this->runQuery($admin, $mb + ['ticket' => '#'.$num])->pluck('id')->all();
         $this->assertEquals([$byA_conv2->id], $ids);
+    }
+
+    /**
+     * The ticket-number fix this PR makes is that the filter matches
+     * Conversation::numberFieldName() rather than a hardcoded 'number'
+     * column — numberFieldName() returns 'id' when app.custom_number is
+     * off (the default, covered by the test above) and 'number' when it's
+     * on. This test proves the other branch: with custom numbering
+     * enabled, the id is NOT the displayed ticket number, and filtering
+     * must match the raw `number` column instead.
+     */
+    public function test_ticket_filter_matches_raw_number_column_when_custom_numbering_enabled()
+    {
+        $originalConfig = config('app.custom_number');
+        $originalCache = Conversation::$custom_number_cache;
+
+        try {
+            config(['app.custom_number' => true]);
+            Conversation::$custom_number_cache = null; // force re-read of the config just set
+
+            $admin = $this->makeUser(User::ROLE_ADMIN);
+            $mailbox = $this->makeMailbox();
+            $folder = $this->makeFolder($mailbox->id);
+            $conv = $this->makeConversation($mailbox->id, $folder->id);
+
+            // Conversation::boot()'s creating() hook always sets number to
+            // max(number)+1, ignoring any factory override, so force a raw
+            // column value guaranteed different from the id via a direct
+            // update rather than relying on the factory.
+            $customNumber = $conv->id + 999000;
+            \DB::table('conversations')->where('id', $conv->id)->update(['number' => $customNumber]);
+
+            $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_STATUS_CHANGED, ['created_by_user_id' => $admin->id]);
+            $mb = ['mailbox_id' => $mailbox->id];
+
+            // The id is not the displayed number in this mode — filtering by
+            // it must not match.
+            $idsById = $this->runQuery($admin, $mb + ['ticket' => $conv->id])->pluck('id')->all();
+            $this->assertEmpty($idsById);
+
+            // The raw `number` column is the displayed number — filtering by
+            // it must match.
+            $idsByNumber = $this->runQuery($admin, $mb + ['ticket' => $customNumber])->pluck('id')->all();
+            $this->assertEquals([$thread->id], $idsByNumber);
+        } finally {
+            config(['app.custom_number' => $originalConfig]);
+            Conversation::$custom_number_cache = $originalCache;
+        }
     }
 
     public function test_filters_by_date_range()
@@ -343,6 +402,107 @@ class AuditLogTest extends TestCase
         $this->assertStringNotContainsString(':person', $label);
     }
 
+    public function test_action_label_strips_own_ticket_number_but_keeps_merge_target_number()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $target = $this->makeConversation($mailbox->id, $folder->id);
+
+        // The Ticket column already shows the row's own conversation number,
+        // so the redundant "conversation #N" self-reference must be dropped.
+        $statusChange = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_STATUS_CHANGED, ['created_by_user_id' => $admin->id]);
+        $label = \Modules\AuditLog\Services\AuditQuery::actionLabel($statusChange);
+        $ownNumber = $this->displayNumber($conv);
+        $this->assertStringNotContainsString((string) $ownNumber, $label);
+
+        // A merge references a DIFFERENT conversation's number — that one
+        // must survive the stripping (it's not the row's own ticket).
+        $merged = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_MERGED, [
+            'created_by_user_id' => $admin->id,
+        ]);
+        $merged->setMeta(Thread::META_MERGED_INTO_CONV, $target->id);
+        $merged->save();
+        $targetNumber = $this->displayNumber($target);
+        $mergeLabel = \Modules\AuditLog\Services\AuditQuery::actionLabel($merged);
+        $this->assertStringContainsString((string) $targetNumber, $mergeLabel);
+    }
+
+    public function test_action_html_renders_a_status_pill_in_the_status_own_colour()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_STATUS_CHANGED, [
+            'created_by_user_id' => $admin->id, 'status' => Thread::STATUS_PENDING,
+        ]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringContainsString('al-pill', $html);
+        $this->assertStringContainsString(\App\Conversation::$status_colors[\App\Conversation::STATUS_PENDING], $html);
+        $this->assertStringContainsString($thread->getStatusName(), $html);
+    }
+
+    public function test_action_html_bolds_the_assignee_name()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $assignee = $this->makeUser(User::ROLE_USER);
+        $assignee->first_name = 'Zzxafirst'; $assignee->last_name = 'Zzxalast'; $assignee->save();
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_USER_CHANGED, [
+            'created_by_user_id' => $admin->id, 'user_id' => $assignee->id,
+        ]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringContainsString('<strong>Zzxafirst Zzxalast</strong>', $html);
+    }
+
+    public function test_action_html_bolds_the_customer_name_and_escapes_it()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $customer = factory(\App\Customer::class)->create(['first_name' => '<script>x</script>', 'last_name' => 'Zzxalast']);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_CUSTOMER_CHANGED, [
+            // 'to' sidesteps a pre-existing ThreadFactory gap: passing
+            // customer_id without it hits an undefined-$customer branch.
+            // A literal address, not $customer->getMainEmail() — the
+            // customer factory never attaches an emails row, so that
+            // would itself be empty and trip the very same gap.
+            'created_by_user_id' => $admin->id, 'customer_id' => $customer->id, 'to' => 'audit-test@example.com',
+        ]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringContainsString('<strong>', $html);
+        // The customer's own name is escaped, so a literal <script> in it
+        // can never break out of the surrounding markup.
+        $this->assertStringNotContainsString('<script>x</script>', $html);
+        $this->assertStringContainsString('&lt;script&gt;', $html);
+    }
+
+    public function test_action_html_falls_back_to_plain_label_for_other_events()
+    {
+        $admin = $this->makeUser(User::ROLE_ADMIN);
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $conv = $this->makeConversation($mailbox->id, $folder->id);
+        $thread = $this->makeLineItem($conv->id, Thread::ACTION_TYPE_RESTORE_TICKET, ['created_by_user_id' => $admin->id]);
+
+        $html = \Modules\AuditLog\Services\AuditQuery::actionHtml($thread);
+
+        $this->assertStringNotContainsString('al-pill', $html);
+        $this->assertStringNotContainsString('<strong>', $html);
+        $this->assertEquals(\Modules\AuditLog\Services\AuditQuery::actionLabel($thread), $html);
+    }
+
     // ---- Controller wiring ------------------------------------------------
     // Full-page HTTP GETs can't be asserted in this CLI harness (FreeScout's
     // ResponseHeaders middleware calls header() after PHPUnit has emitted
@@ -360,7 +520,7 @@ class AuditLogTest extends TestCase
         $onTwo = $this->makeLineItem($conv2->id, Thread::ACTION_TYPE_STATUS_CHANGED, ['created_by_user_id' => $admin->id]);
 
         $this->actingAs($admin);
-        $num = \DB::table('conversations')->where('id', $conv1->id)->value('number');
+        $num = $this->displayNumber($conv1);
         $request = Request::create('/audit', 'GET', ['ticket' => $num, 'from' => '2000-01-01', 'to' => '2037-12-31']);
         $view = (new \Modules\AuditLog\Http\Controllers\AuditLogController())->index($request);
 

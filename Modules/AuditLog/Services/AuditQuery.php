@@ -2,6 +2,7 @@
 
 namespace Modules\AuditLog\Services;
 
+use App\Conversation;
 use App\Thread;
 use App\User;
 
@@ -80,7 +81,7 @@ class AuditQuery
                 });
         })
             ->whereBetween('threads.created_at', [$f->from, $f->to])
-            ->with(['created_by_user_cached', 'created_by_customer', 'conversation.mailbox'])
+            ->with(['created_by_user_cached', 'created_by_customer', 'customer_cached', 'user', 'conversation.mailbox'])
             ->orderBy('threads.created_at', 'desc')
             ->orderBy('threads.id', 'desc');
 
@@ -102,7 +103,14 @@ class AuditQuery
                 $c->where('mailbox_id', $mailbox_id);
             }
             if ($ticket) {
-                $c->where('number', $ticket);
+                // Ticket numbers displayed to users are $conversation->number,
+                // which is an accessor: it returns the raw `number` column
+                // only when app.custom_number is enabled, and `id` otherwise
+                // (the default). numberFieldName() is core's own helper for
+                // matching against whichever one is actually in effect —
+                // hardcoding 'number' here would silently stop matching real
+                // ticket numbers whenever custom numbering is off.
+                $c->where(Conversation::numberFieldName(), $ticket);
             }
             if ($restrict_ids !== null) {
                 $c->whereIn('mailbox_id', $restrict_ids);
@@ -196,7 +204,102 @@ class AuditQuery
         $text = $thread->getActionText($number, false, true);
         $text = str_replace(':person', '', $text);
 
+        // Drop the row's own "conversation #N" self-reference — the Ticket
+        // column already shows it — while keeping references to *other*
+        // conversations (e.g. a merge target has a different number).
+        if ($number !== '' && $number !== null) {
+            $n = preg_quote($number, '/');
+            $text = preg_replace('/\s*(to|into|in|for|a new)?\s*conversation #'.$n.'\b/i', '', $text);
+            $text = preg_replace('/\s*#'.$n.'\b/', '', $text);
+        }
+
         return trim(preg_replace('/\s{2,}/', ' ', $text));
+    }
+
+    /** Neutral fallback used whenever a status has no usable registered colour. */
+    const DEFAULT_STATUS_COLOR = '#d99a2b';
+
+    /**
+     * The new status's colour for a status-change line-item, sourced from
+     * Conversation::$status_colors — the same live map core and other
+     * modules register into (e.g. OnHoldStatus adds its own amber entry),
+     * so a pill always matches whatever colour that status actually renders
+     * with elsewhere, including any custom status added later. Falls back to
+     * a neutral amber if a status isn't registered, or if it's registered
+     * with something other than a plain 6-digit hex value — statusPillHtml()
+     * appends an alpha channel directly onto this string (e.g. '#f39c12' ->
+     * '#f39c1222'), which only produces valid CSS for that exact shape; a
+     * future status registered as a CSS keyword or rgb() string would
+     * otherwise silently lose both its text and background colour.
+     */
+    public static function statusColor(Thread $thread)
+    {
+        $colors = Conversation::$status_colors;
+        $color = $colors[$thread->status] ?? null;
+
+        return self::isHexColor($color) ? $color : self::DEFAULT_STATUS_COLOR;
+    }
+
+    protected static function isHexColor($color)
+    {
+        return is_string($color) && preg_match('/^#[0-9a-fA-F]{6}$/', $color);
+    }
+
+    /**
+     * Safe HTML for the Action cell: a coloured pill for the new status on a
+     * status change, and a bold name for an assignment or customer change —
+     * matching the visual language agreed with ARMS — falling back to the
+     * plain, native-wording label (via actionLabel()) for every other event.
+     * Every dynamic piece is escaped; the surrounding markup is static.
+     */
+    public static function actionHtml(Thread $thread)
+    {
+        if ($thread->type == Thread::TYPE_LINEITEM) {
+            switch ($thread->action_type) {
+                case Thread::ACTION_TYPE_STATUS_CHANGED:
+                    return e(__('marked as')).' '.self::statusPillHtml($thread);
+                case Thread::ACTION_TYPE_USER_CHANGED:
+                    return e(__('assigned')).' <strong>'.e($thread->getAssigneeName(false)).'</strong>';
+                case Thread::ACTION_TYPE_CUSTOMER_CHANGED:
+                    $customer_name = $thread->customer_cached ? $thread->customer_cached->getFullName(true) : '';
+
+                    return e(__('changed the customer to')).' <strong>'.e($customer_name).'</strong>';
+            }
+        }
+
+        return e(self::actionLabel($thread));
+    }
+
+    /**
+     * A soft pill for a status name: solid-colour text on a light tint of
+     * that same colour, so it reads as "coloured" without core's harsher
+     * solid-background/white-text tag style.
+     */
+    protected static function statusPillHtml(Thread $thread)
+    {
+        // statusColor() already guarantees a 6-digit hex string, but every
+        // other dynamic value in this class is escaped before reaching HTML
+        // — escape this one too rather than leaving it the one exception.
+        $color = e(self::statusColor($thread));
+        $name = e($thread->getStatusName());
+
+        return '<span class="al-pill" style="color: '.$color.'; background: '.$color.'22;">'.$name.'</span>';
+    }
+
+    /**
+     * Up-to-two-letter initials for the actor avatar.
+     */
+    public static function initials($name)
+    {
+        $name = trim((string) $name);
+        if ($name === '' || $name === '—') {
+            return '·';
+        }
+        $parts = preg_split('/\s+/', $name);
+        $first = mb_substr($parts[0], 0, 1);
+        $last = count($parts) > 1 ? mb_substr($parts[count($parts) - 1], 0, 1) : '';
+
+        return mb_strtoupper($first.$last);
     }
 
     /**
