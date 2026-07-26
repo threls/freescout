@@ -27,9 +27,14 @@ things rule out extending it directly:
    module registers into `Conversation::$statuses` at boot.
 
 So this module reimplements the same one-click idea from scratch, reading
-`Conversation::$statuses` directly instead of hardcoding a status list —
-deactivate **Send & Close** before activating this one, to avoid two
-competing buttons in the same dropdown.
+`Conversation::$statuses` directly instead of hardcoding a status list.
+Deactivating **Send & Close** first is still the right long-term move (see
+Activation below), but this module also actively hides Send & Close's own
+button if that manual step is ever skipped — see "Suppressing Send & Close"
+— rather than relying on the step being remembered. Confirmed live on the
+demo: both modules were active at once, and the dropdown showed Send & Close
+sitting there completely unchanged, next to Send & Solve, which isn't what
+"change Send & Close to Send & Solve" means.
 
 ## How it works
 
@@ -82,6 +87,29 @@ every `.sas-send-status` item, which does two things:
    exact same `action=send_reply` POST the Status select + Send button
    already do today, just pre-filled.
 
+## Suppressing Send & Close
+
+`Public/css/style.css` (enqueued via the `stylesheets` Eventy filter) hides
+Send & Close's own button outright:
+
+```css
+li:has(> .sc-reply-submit) { display: none; }
+li:has(> .sc-reply-submit) + li.divider { display: none; }
+```
+
+`sc-reply-submit` is Send & Close's real button class (confirmed from its
+production source, not guessed). CSS rather than JS DOM removal here
+specifically because of the Summernote clone behaviour described above:
+`.note-statusbar` gets rebuilt from scratch on every editor init, so a
+one-time JS removal at page load would go stale the next time that happens,
+where a plain CSS rule just keeps matching. This is a pure CSS `:has()`
+selector — it does nothing (Send & Close's button stays visible, same as
+today) on a browser old enough not to support it, rather than erroring; every
+current mainstream browser has supported `:has()` since 2023.
+
+If Send & Close isn't active at all, this CSS matches nothing and is a
+no-op.
+
 ## Translations
 
 Send & Close ships `Resources/lang/*.json` translations for its button
@@ -113,7 +141,9 @@ the same set of selectable statuses.
 
 Manage → Modules → SendAndSetStatus → Activate (activation state lives in
 the database; `module.json`'s `active` flag is ignored, per
-`app/Module.php`). Deactivate the paid Send & Close module first.
+`app/Module.php`). Deactivating the paid Send & Close module too is still
+recommended (no point loading two modules' JS for one job), but no longer
+required for a clean-looking dropdown — see "Suppressing Send & Close".
 
 ## Tests
 
@@ -121,5 +151,8 @@ the database; `module.json`'s `active` flag is ignored, per
 against a fixed `Conversation::$statuses` registry (with and without
 On-Hold registered), that it renders even when composing a new conversation,
 that Spam and Closed are never rendered as secondary items, that every
-shipped language file is valid JSON carrying both keys, and that switching
-the app locale actually resolves a translated string end to end.
+shipped language file is valid JSON carrying both keys, that switching the
+app locale actually resolves a translated string end to end, and that the
+suppression CSS ships and targets Send & Close's real button class. The CSS
+rule's actual effect (an element disappearing) isn't something PHPUnit can
+verify — that's a live-browser check, not covered here.

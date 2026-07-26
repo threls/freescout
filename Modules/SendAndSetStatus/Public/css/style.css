@@ -1,0 +1,16 @@
+/*
+ * Suppresses the paid Send & Close module's own button (class
+ * "sc-reply-submit", confirmed from its real production source) if it's
+ * ever left active alongside this module — this module is meant to fully
+ * replace it, not sit next to it. Deactivating Send & Close is still the
+ * right long-term move (see the README), but that's a manual step that has
+ * already been forgotten once in practice, so this makes "both active"
+ * harmless instead of relying on remembering it every time.
+ */
+li:has(> .sc-reply-submit) {
+	display: none;
+}
+
+li:has(> .sc-reply-submit) + li.divider {
+	display: none;
+}
