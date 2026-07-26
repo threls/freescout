@@ -121,7 +121,7 @@ class GithubRepositoryType extends AbstractRepositoryType implements SourceRepos
         }
 
         $storageFile = $storagePath.DIRECTORY_SEPARATOR.$storageFilename;
-        $this->downloadRelease($this->client, $release->zipball_url, $storageFile);
+        $this->downloadRelease($this->client, $zipball_url, $storageFile);
 
         $this->unzipArchive($storageFile, $storagePath);
 
