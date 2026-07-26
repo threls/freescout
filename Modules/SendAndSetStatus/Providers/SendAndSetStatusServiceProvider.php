@@ -63,6 +63,22 @@ class SendAndSetStatusServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        $this->registerTranslations();
+    }
+
+    /**
+     * Register translations.
+     *
+     * Same locales and mechanism (loadJsonTranslationsFrom) Send & Close's
+     * own Resources/lang ships, for the two strings this module introduces
+     * ("Send & Solve" and "Send as") that aren't already covered by core's
+     * or another module's translation files.
+     *
+     * @return void
+     */
+    public function registerTranslations()
+    {
+        $this->loadJsonTranslationsFrom(__DIR__.'/../Resources/lang');
     }
 
     public function hooks()

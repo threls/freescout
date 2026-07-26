@@ -117,4 +117,44 @@ class SendAndSetStatusTest extends TestCase
 
         $this->assertStringContainsString('Send &amp; Solve', $html);
     }
+
+    /**
+     * Matches Send & Close's own Resources/lang mechanism
+     * (loadJsonTranslationsFrom) for the two strings this module
+     * introduces, so a non-English locale doesn't fall back to raw English.
+     */
+    public function test_translations_resolve_for_a_non_default_locale()
+    {
+        (new \Modules\SendAndSetStatus\Providers\SendAndSetStatusServiceProvider(app()))->register();
+
+        $originalLocale = app()->getLocale();
+        app()->setLocale('de');
+
+        try {
+            $this->assertSame('Senden & Lösen', __('Send & Solve'));
+            $this->assertSame('Senden als', __('Send as'));
+        } finally {
+            app()->setLocale($originalLocale);
+        }
+    }
+
+    /**
+     * Every shipped language file must be valid JSON and carry both keys —
+     * a malformed or incomplete file fails silently otherwise (Laravel just
+     * falls back to the English key with no error).
+     */
+    public function test_every_shipped_translation_file_is_valid_and_complete()
+    {
+        $files = glob(__DIR__.'/../../Modules/SendAndSetStatus/Resources/lang/*.json');
+
+        $this->assertNotEmpty($files);
+
+        foreach ($files as $file) {
+            $decoded = json_decode(file_get_contents($file), true);
+
+            $this->assertIsArray($decoded, "$file is not valid JSON");
+            $this->assertArrayHasKey('Send & Solve', $decoded, "$file is missing 'Send & Solve'");
+            $this->assertArrayHasKey('Send as', $decoded, "$file is missing 'Send as'");
+        }
+    }
 }

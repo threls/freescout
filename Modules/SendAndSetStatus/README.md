@@ -82,6 +82,20 @@ every `.sas-send-status` item, which does two things:
    exact same `action=send_reply` POST the Status select + Send button
    already do today, just pre-filled.
 
+## Translations
+
+Send & Close ships `Resources/lang/*.json` translations for its button
+label in 11 locales (cs, bg, pl, fi, it, ru, zh-CN, fr, sk, de, pt-BR). This
+module matches that: the same locales, same `loadJsonTranslationsFrom`
+mechanism, covering the two strings this module introduces ("Send & Solve"
+and "Send as") that aren't already covered by core's or another module's
+translation files — `Conversation::statusCodeToName()`'s own output (New,
+Pending, On Hold, Solved) is already translated independently via core and
+`ActiveToNewLabel`/`OnHoldStatus`. Translated by general language knowledge
+rather than a native-speaker review, same confidence level as any other
+non-English string in this codebase — worth a native check before this
+instance is ever switched off English.
+
 ## Companion fix (core fork patch)
 
 The reply editor's own Status `<select>`
@@ -106,4 +120,6 @@ the database; `module.json`'s `active` flag is ignored, per
 `tests/Unit/SendAndSetStatusTest.php` — the primary/secondary item set
 against a fixed `Conversation::$statuses` registry (with and without
 On-Hold registered), that it renders even when composing a new conversation,
-and that Spam and Closed are never rendered as secondary items.
+that Spam and Closed are never rendered as secondary items, that every
+shipped language file is valid JSON carrying both keys, and that switching
+the app locale actually resolves a translated string end to end.
