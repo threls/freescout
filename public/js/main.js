@@ -1775,7 +1775,9 @@ function showReplyForm(data, scroll_offset)
 	$("#to").removeClass('hidden');
 	$("#to_email").addClass('hidden').addClass('parsley-exclude').next('.select2:first').hide();
 
-	if (!$('#to').length) {
+	// Focus reply area. Do not focus when creating a new conversation.
+	//if (!$('#to').length) {
+	if (!$('#subject').length) {
 		$('#body').summernote('focus');
 	}
 
@@ -4234,10 +4236,12 @@ function initSystemStatus()
 {
 	if (location.protocol == 'https:') {
 		$('#system-app-protocol').text('HTTPS');
+		if ($('#session_secure_cookie').data('session-secure') == '0') {
+			$('#session_secure_cookie').removeClass('hidden');
+		}
 	} else {
-		var html = 'HTTP'+
-			'<div class="alert alert-danger margin-top">'+Lang.get("messages.push_protocol_alert")+'</div>';
-		$('#system-app-protocol').html(html);
+		$('#system-app-protocol').text('HTTP');
+		$('#protocol_push_notifications').removeClass('hidden');
 	}
 
 	$('.update-trigger').click(function(e) {

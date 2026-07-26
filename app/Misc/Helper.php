@@ -549,8 +549,11 @@ class Helper
         // Remove all kinds of spaces after tags.
         // https://stackoverflow.com/questions/3230623/filter-all-types-of-whitespace-in-php
         // 
+        // Initially this function was used to prepare short previews for conversations.
+        // Now it's not clear why this preg_replace() was needed.
+        // 
         // Keep in mind that preg_replace() may return NULL if "u" flag is used.
-        $text = preg_replace("/^(.*)>[\r\n]*\s+/mu", '$1>', $text ?? '');
+        //$text = preg_replace("/^(.*)>[\r\n]*\s+/mu", '$1>', $text ?? '');
 
         // Remove <script> and <style> blocks.
         $text = preg_replace('#<script(.*?)>(.*?)</script>#is', '', $text ?? '');
@@ -573,6 +576,7 @@ class Helper
         // }
         // $text = urldecode($text);
 
+        // Remove double spaces.
         $text = trim(preg_replace('/[ ]+/', ' ', $text ?? ''));
 
         return $text;
@@ -1785,6 +1789,7 @@ class Helper
 
                 $svg_sanitizer = new \enshrined\svgSanitize\Sanitizer();
                 $clean_content = $svg_sanitizer->sanitize($content);
+                // If XML parsing fails, remove <script> tags. Other attributes will be protected by CSP.
                 if (!$clean_content)  {
                     $clean_content = preg_replace('#<script(.*?)>(.*?)</script>#is', '', $content);
                 }
@@ -2071,6 +2076,10 @@ class Helper
             $_SERVER['LOCAL_ADDR'] ?? '',
         ];
 
+        // IPv6 URLs look like http://[::1].
+        // Remove square brackets from hosts (for IPv6 addresses).
+        $parts['host'] = str_replace(['[', ']'], '', $parts['host'] ?? '');
+
         if (!in_array($parts['host'], $host_white_list) && !self::checkIpByMask($parts['host'], $host_white_list)) {
             if (in_array($parts['host'], $restricted_hosts) || self::checkIpByMask($parts['host'], $restricted_hosts)) {
                 if ($throw_exception) {
@@ -2102,28 +2111,26 @@ class Helper
         $ch = curl_init();
 
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        // Headers have to be in the response for the Location: regex below
-        // to ever match - curl doesn't include them by default (gemini-
-        // code-assist review, PR #23).
-        curl_setopt($ch, CURLOPT_HEADER, 1);
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
-        curl_setopt($ch, CURLOPT_MAXREDIRS, 1);
+        // Must not auto-follow: sanitizeRemoteUrl() validates each hop's host
+        // before it's fetched, so curl has to stop at the first response and
+        // hand back its Location header rather than reaching the target itself.
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
         curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+        curl_setopt($ch, CURLOPT_HEADER, 1);
 
         curl_setopt($ch, CURLOPT_URL, $url);
         \Helper::setCurlDefaultOptions($ch);
         curl_setopt($ch, CURLOPT_TIMEOUT, 180);
-        // setCurlDefaultOptions() above already set CURLOPT_SSL_VERIFYPEER
-        // from config('app.curl_ssl_verifypeer') - forcing it to false here
-        // unconditionally disabled certificate verification for everyone
-        // regardless of that setting (gemini-code-assist review, PR #23).
+        // setCurlDefaultOptions() above already set CURLOPT_SSL_VERIFYPEER from
+        // config('app.curl_ssl_verifypeer') - not forcing it to false here.
         $response = curl_exec($ch);
 
         $curl_errno = curl_errno($ch);
 
-        $redirected_url = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+        //$redirected_url = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
 
-        if ($curl_errno && $curl_errno != CURLE_TOO_MANY_REDIRECTS && !$redirected_url) {
+        //if ($curl_errno && $curl_errno != CURLE_TOO_MANY_REDIRECTS && !$redirected_url) {
+        if ($curl_errno) {
             if ($throw_exception) {
                 throw new \Exception('Could not check URL contents by following redirects: '.$curl_errno, 1);
             } else {
@@ -2131,16 +2138,20 @@ class Helper
             }
         }
 
-        $info = curl_getinfo($ch);
-        if ($info['http_code'] >= 300 && $info['http_code'] < 400) {
+        //$info = curl_getinfo($ch);
+        //if ($info['http_code'] >= 300 && $info['http_code'] < 400) {
 
-            // We've hit a redirect but couldn't follow it due to MAXREDIRS limit.
-            // Extract Location header from response.
-            preg_match('/Location: (.*)/', $response, $matches);
-            if (isset($matches[1])) {
-                $redirected_url = trim($matches[1]);
-            }
+        // Extract Location header from response.
+        $redirected_url = '';
+
+        $header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $headers = substr($response ?? '', 0, $header_size);
+        preg_match('/Location: (.*)/i', $headers, $matches);
+
+        if (isset($matches[1])) {
+            $redirected_url = trim($matches[1]);
         }
+        //}
 
         if (PHP_VERSION_ID < 80000) {
             \curl_close($ch);
