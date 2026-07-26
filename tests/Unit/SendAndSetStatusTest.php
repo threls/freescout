@@ -41,10 +41,10 @@ class SendAndSetStatusTest extends TestCase
         (new \Modules\SendAndSetStatus\Providers\SendAndSetStatusServiceProvider(app()))->boot();
     }
 
-    protected function renderDropdown($conversation = null, $mailbox = null, $new_conversation = false)
+    protected function renderDropdown(...$args)
     {
         ob_start();
-        \Eventy::action('conversation.prepend_send_dropdown', $conversation, $mailbox, $new_conversation);
+        \Eventy::action('conversation.prepend_send_dropdown', ...$args);
 
         return ob_get_clean();
     }
@@ -58,7 +58,7 @@ class SendAndSetStatusTest extends TestCase
         // e() escapes the & for HTML output.
         $this->assertStringContainsString('Send &amp; Solve', $html);
         $this->assertStringContainsString('data-send-status="'.Conversation::STATUS_CLOSED.'"', $html);
-        $this->assertStringContainsString('btn-success', $html);
+        $this->assertStringContainsString('<button type="button" class="btn btn-success btn-block sas-send-status"', $html);
     }
 
     public function test_secondary_items_cover_active_and_pending_but_not_closed_or_spam()
@@ -100,12 +100,21 @@ class SendAndSetStatusTest extends TestCase
         $this->assertStringContainsString(__('Send as').' On Hold', $html);
     }
 
-    public function test_skipped_entirely_for_a_new_conversation()
+    /**
+     * Matches the real Send & Close module's own behaviour: it renders
+     * unconditionally, including when composing a brand-new outgoing
+     * conversation (editor_bottom_toolbar.blade.php's
+     * @action('conversation.prepend_send_dropdown', $conversation, $mailbox,
+     * $new_converstion ?? false) call passes true there) — this listener
+     * takes no parameters, so it ignores whatever's passed rather than
+     * gating on it.
+     */
+    public function test_renders_even_when_composing_a_new_conversation()
     {
         $this->bootModule();
 
         $html = $this->renderDropdown(null, null, true);
 
-        $this->assertSame('', $html);
+        $this->assertStringContainsString('Send &amp; Solve', $html);
     }
 }

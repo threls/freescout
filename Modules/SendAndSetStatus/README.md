@@ -37,13 +37,19 @@ competing buttons in the same dropdown.
 menu next to the Send button, and already calls
 `@action('conversation.prepend_send_dropdown', $conversation, $mailbox,
 $new_converstion ?? false)` at the very top of it — a hook point core ships
-with, used by nothing else in this codebase yet. This module's provider
-listens on that action and echoes:
+with. The real Send & Close module (its source pulled from the production
+install to check this module against it) listens on that same action with a
+zero-argument callback, ignoring whatever's passed — it renders
+unconditionally, including on a brand-new outgoing conversation. This module
+follows that precedent rather than adding an untested gate of its own, and
+echoes:
 
-- one primary `<li>` — a green `.btn-success` button, always labelled **Send
-  & Solve**, `data-send-status` hardcoded to `Conversation::STATUS_CLOSED`
-- one plain `<li>` per remaining registered status (Active/New, Pending, and
-  On-Hold if `OnHoldStatus` is active) except Spam, labelled "Send as
+- one primary `<li>` — a `<button type="button" class="btn btn-success
+  btn-block">`, matching Send & Close's own markup exactly, always labelled
+  **Send & Solve**, `data-send-status` hardcoded to
+  `Conversation::STATUS_CLOSED`
+- one plain `<li><a>` per remaining registered status (Active/New, Pending,
+  and On-Hold if `OnHoldStatus` is active) except Spam, labelled "Send as
   \<name\>" via `Conversation::statusCodeToName()` — so labels stay in sync
   with the existing New/Solved renames (`ActiveToNewLabel`, core's own
   Closed→Solved) and the On-Hold name filter, with no separate lang file to
@@ -54,19 +60,27 @@ secondary buttons appear/disappear automatically as status-registering
 modules (`OnHoldStatus`) are activated/deactivated — no coupling between the
 two modules' code.
 
-Skipped entirely for a brand-new outgoing conversation (`$new_converstion`)
-— same gate core already uses for "Conversation History" /
-"Change default redirect" in this same dropdown, since a conversation with no
-prior status has nothing to "leave".
-
 `Public/js/module.js` (enqueued via the `javascripts` Eventy filter, same
 pattern as `SortableCustomFields`) binds one delegated click handler for
-every `.sas-send-status` item: set the shared Status `<select>` to the
-button's `data-send-status`, then trigger whichever `.btn-reply-submit`
-button is currently visible (Send/Forward/Note/Create — same selector core's
-own Cmd+Enter shortcut uses). No new backend endpoint or request format —
-this produces the exact same `action=send_reply` POST the Status select +
-Send button already do today, just pre-filled.
+every `.sas-send-status` item, which does two things:
+
+1. Sets the Status `<select>` to the button's `data-send-status` — but
+   scoped to `.note-statusbar:visible:first select[name="status"]:first`,
+   not the more obvious-looking `#editor_bottom_toolbar` select itself.
+   `main.js`'s `convEditorInit()` clones the *entire* hidden
+   `#editor_bottom_toolbar` template's HTML into Summernote's own
+   `.note-statusbar` element on every editor init, so the DOM ends up with
+   two elements named `status`: the original (outside the `<form>`, never
+   submitted) and this visible clone (inside the `<form>`, the one
+   `form.serialize()` actually picks up). This selector is copied verbatim
+   from the real Send & Close module's own JS, which already handles this
+   correctly in production — not something to rediscover by reading the
+   Blade templates alone.
+2. Triggers whichever `.btn-reply-submit` button is currently visible
+   (Send/Forward/Note/Create — same selector core's own Cmd+Enter shortcut
+   uses). No new backend endpoint or request format — this produces the
+   exact same `action=send_reply` POST the Status select + Send button
+   already do today, just pre-filled.
 
 ## Companion fix (core fork patch)
 
@@ -91,5 +105,5 @@ the database; `module.json`'s `active` flag is ignored, per
 
 `tests/Unit/SendAndSetStatusTest.php` — the primary/secondary item set
 against a fixed `Conversation::$statuses` registry (with and without
-On-Hold registered), the `$new_converstion` gate, and that Spam and Closed
-are never rendered as secondary items.
+On-Hold registered), that it renders even when composing a new conversation,
+and that Spam and Closed are never rendered as secondary items.

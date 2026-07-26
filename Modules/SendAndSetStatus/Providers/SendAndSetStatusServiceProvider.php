@@ -26,6 +26,14 @@ use Illuminate\Support\ServiceProvider;
  * Conversation::$statuses directly, so it automatically offers one item per
  * currently-registered status with no further wiring — deactivate Send &
  * Close before activating this one to avoid two competing buttons.
+ *
+ * The button markup and args deliberately mirror Send & Close's own real
+ * source (pulled from the production install to verify this): a plain
+ * <button type="button"> with btn/btn-block, not an <a>, and a
+ * zero-argument listener rather than one that reads $conversation/$mailbox/
+ * $new_conversation — Send & Close renders unconditionally, including on a
+ * brand-new outgoing conversation, and this follows suit rather than adding
+ * an untested restriction of its own.
  */
 class SendAndSetStatusServiceProvider extends ServiceProvider
 {
@@ -65,37 +73,16 @@ class SendAndSetStatusServiceProvider extends ServiceProvider
             return $javascripts;
         });
 
-        \Eventy::addFilter('stylesheets', function ($styles) {
-            $styles[] = \Module::getPublicPath(self::MODULE_ALIAS).'/css/style.css';
-
-            return $styles;
-        });
-
         // Renders at the very top of the Send dropdown, above core's own
         // "Send and stay on page" / "Send and next active" items.
-        // 3 args (not the default 1): editor_bottom_toolbar.blade.php calls
-        // @action('conversation.prepend_send_dropdown', $conversation, $mailbox,
-        // $new_converstion ?? false) — Eventy truncates a listener's args down
-        // to whatever count it was registered with, so $new_conversation would
-        // silently always be null without this (see the identical note in
-        // Modules/SortableCustomFields's provider).
-        \Eventy::addAction('conversation.prepend_send_dropdown', function ($conversation, $mailbox, $new_conversation = false) {
-            $this->renderSendStatusActions($new_conversation);
-        }, 20, 3);
+        \Eventy::addAction('conversation.prepend_send_dropdown', function () {
+            $this->renderSendStatusActions();
+        });
     }
 
-    /**
-     * A brand-new outgoing conversation has no prior status to leave — only
-     * render these on existing conversations, same gate core already uses for
-     * "Conversation History" / "Change default redirect" in this dropdown.
-     */
-    protected function renderSendStatusActions($new_conversation)
+    protected function renderSendStatusActions()
     {
-        if ($new_conversation) {
-            return;
-        }
-
-        echo '<li class="sas-primary-item"><a href="#" class="btn btn-success sas-send-status" data-send-status="'.(int) Conversation::STATUS_CLOSED.'">'.e(__('Send & Solve')).'</a></li>';
+        echo '<li><button type="button" class="btn btn-success btn-block sas-send-status" data-send-status="'.(int) Conversation::STATUS_CLOSED.'">'.e(__('Send & Solve')).'</button></li>';
 
         foreach (array_keys(Conversation::$statuses) as $status) {
             if (in_array($status, [Conversation::STATUS_CLOSED, Conversation::STATUS_SPAM])) {

@@ -10,11 +10,13 @@
 
 		var status = $(this).attr('data-send-status');
 
-		// Same scoping main.js's own prepareReplyForm() uses for this select —
-		// there is one shared Status <select>, its enclosing block's classes
-		// (conv-note-block/conv-forward-block) change with the editor's mode,
-		// not the select itself.
-		$('.conv-reply-block').children().find(":input[name='status']:first").val(status);
+		// main.js's convEditorInit() clones the whole hidden #editor_bottom_toolbar
+		// template into Summernote's own .note-statusbar element on every editor
+		// init, so there are two "status" selects in the DOM: the original
+		// (never submitted) and this visible clone (the one form.serialize()
+		// actually picks up). Same selector the real Send & Close module uses
+		// for this exact reason.
+		$('.note-statusbar:visible:first select[name="status"]:first').val(status);
 
 		// Same selector main.js's own Cmd+Enter send shortcut uses to find
 		// whichever of the Send/Forward/Note/Create buttons is currently
