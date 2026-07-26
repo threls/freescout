@@ -36,6 +36,7 @@ Thumbs.db
 !/Modules/ActiveToNewLabel
 !/Modules/SolvedReopenWindow
 !/Modules/AuditLog
+!/Modules/SendAndSetStatus
 /public/modules
 /public/docs
 /public/.dh-diag

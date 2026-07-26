@@ -1,0 +1,23 @@
+{
+    "name": "SendAndSetStatus",
+    "alias": "sendandsetstatus",
+    "description": "Adds one-click Send + Status actions to the reply/note editor's Send dropdown: a primary \"Send & Solve\" button plus a \"Send as <status>\" item for every other registered status, including On-Hold. Supersedes the paid Send & Close module, which cannot see module-registered statuses.",
+    "version": "1.0.0",
+    "detailsUrl": "",
+    "img": "/modules/sendandsetstatus/img/icon.svg",
+    "author": "Threls",
+    "authorUrl": "https://threls.com",
+    "requiredAppVersion": "1.8.0",
+    "license": "AGPL-3.0",
+    "keywords": ["status", "send", "reply"],
+    "active": 0,
+    "order": 0,
+    "providers": [
+        "Modules\\SendAndSetStatus\\Providers\\SendAndSetStatusServiceProvider"
+    ],
+    "aliases": {},
+    "files": [
+        "start.php"
+    ],
+    "requires": []
+}

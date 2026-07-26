@@ -10,10 +10,17 @@
 	<span class="editor-btm-text">{{ __('Status') }}:</span> 
     {{-- Note keeps status--}}
 	<select name="status" class="form-control parsley-exclude" data-reply-status="@if ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_KEEP_CURRENT){{ $conversation->status }}@else{{ $mailbox->ticket_status }}@endif" data-note-status="{{ $conversation->status }}">
-        <option value="{{ App\Mailbox::TICKET_STATUS_ACTIVE }}" @if ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_ACTIVE || ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_KEEP_CURRENT && $conversation->status == App\Mailbox::TICKET_STATUS_ACTIVE))selected="selected"@endif>{{ __('Active') }}</option>
-        <option value="{{ App\Mailbox::TICKET_STATUS_PENDING }}" @if ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_PENDING || ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_KEEP_CURRENT && $conversation->status == App\Mailbox::TICKET_STATUS_PENDING))selected="selected"@endif>{{ __('Pending') }}</option>
-        <option value="{{ App\Mailbox::TICKET_STATUS_CLOSED }}" @if ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_CLOSED || ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_KEEP_CURRENT && $conversation->status == App\Mailbox::TICKET_STATUS_CLOSED))selected="selected"@endif>{{ __('Closed') }}</option>
-    </select> 
+        {{-- threls fork patch: was 3 hardcoded options (Active/Pending/Closed), so
+             module-registered statuses (e.g. On-Hold) never appeared here even though every
+             other status dropdown in the app (conv-status button, bulk actions, search
+             filter) already reads Conversation::$statuses. Mailbox::TICKET_STATUS_* and
+             Conversation::STATUS_* share the same numeric codes for Active/Pending/Closed,
+             so this loop is a drop-in replacement. --}}
+        @foreach (App\Conversation::$statuses as $status => $dummy)
+            @continue($status == App\Conversation::STATUS_SPAM)
+            <option value="{{ $status }}" @if ($mailbox->ticket_status == $status || ($mailbox->ticket_status == App\Mailbox::TICKET_STATUS_KEEP_CURRENT && $conversation->status == $status))selected="selected"@endif>{{ App\Conversation::statusCodeToName($status) }}</option>
+        @endforeach
+    </select>
     <small class="note-bottom-div"></small> 
     <span class="editor-btm-text">{{ __('Assign to') }}:</span> 
     {{-- Note never changes Assignee --}}
