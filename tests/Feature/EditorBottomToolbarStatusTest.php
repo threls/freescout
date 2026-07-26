@@ -63,8 +63,22 @@ class EditorBottomToolbarStatusTest extends TestCase
         return [$mailbox, $conversation];
     }
 
+    /**
+     * The synthetic status is the point of this test, not an afterthought:
+     * asserting only Active/Pending/Closed would pass identically against
+     * the pre-fix markup, which hardcoded exactly those three literal
+     * <option>s — that old code could never render a status it doesn't know
+     * about, no matter what's registered. Adding one here is what actually
+     * proves the select reads Conversation::$statuses live rather than a
+     * fixed list; the sibling test below covers the real On-Hold case
+     * end-to-end (including its name-resolution filter), which this test
+     * deliberately doesn't depend on.
+     */
     public function test_reply_status_select_offers_every_registered_status_except_spam()
     {
+        $syntheticStatus = 12345;
+        Conversation::$statuses[$syntheticStatus] = 'synthetic';
+
         $admin = factory(User::class)->create(['role' => User::ROLE_ADMIN]);
         [$mailbox, $conversation] = $this->makeMailboxAndConversation($admin);
 
@@ -75,6 +89,7 @@ class EditorBottomToolbarStatusTest extends TestCase
         $this->assertStringContainsString('value="'.Conversation::STATUS_ACTIVE.'"', $html);
         $this->assertStringContainsString('value="'.Conversation::STATUS_PENDING.'"', $html);
         $this->assertStringContainsString('value="'.Conversation::STATUS_CLOSED.'"', $html);
+        $this->assertStringContainsString('value="'.$syntheticStatus.'"', $html);
         $this->assertStringNotContainsString('value="'.Conversation::STATUS_SPAM.'"', $html);
     }
 
