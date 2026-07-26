@@ -24,8 +24,12 @@ use Illuminate\Support\ServiceProvider;
  * extend it, so it can never learn about On-Hold (status 5, registered at
  * runtime by Modules/OnHoldStatus). This module instead reads
  * Conversation::$statuses directly, so it automatically offers one item per
- * currently-registered status with no further wiring — deactivate Send &
- * Close before activating this one to avoid two competing buttons.
+ * currently-registered status with no further wiring. Deactivating Send &
+ * Close is still the right long-term move (no point loading two modules'
+ * JS for one job), but this module's own CSS (Public/css/style.css) also
+ * hides Send & Close's button outright if that manual step is ever
+ * forgotten — confirmed live: both were active at once and Send & Close
+ * kept showing up unchanged.
  *
  * The button markup and args deliberately mirror Send & Close's own real
  * source (pulled from the production install to verify this): a plain
@@ -87,6 +91,14 @@ class SendAndSetStatusServiceProvider extends ServiceProvider
             $javascripts[] = \Module::getPublicPath(self::MODULE_ALIAS).'/js/module.js';
 
             return $javascripts;
+        });
+
+        // Suppresses Send & Close's own button if that module is ever left
+        // active alongside this one — see Public/css/style.css.
+        \Eventy::addFilter('stylesheets', function ($styles) {
+            $styles[] = \Module::getPublicPath(self::MODULE_ALIAS).'/css/style.css';
+
+            return $styles;
         });
 
         // Renders at the very top of the Send dropdown, above core's own

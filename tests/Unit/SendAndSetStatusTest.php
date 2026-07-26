@@ -157,4 +157,19 @@ class SendAndSetStatusTest extends TestCase
             $this->assertArrayHasKey('Send as', $decoded, "$file is missing 'Send as'");
         }
     }
+
+    /**
+     * Guards against the exact regression a reviewer caught live: both this
+     * module and the paid Send & Close module active at once, with Send &
+     * Close's own button still showing unchanged in the dropdown. This only
+     * checks the CSS ships and targets the right class — whether the
+     * browser actually hides the element is outside what PHPUnit can verify.
+     */
+    public function test_suppression_css_targets_send_close_button()
+    {
+        $css = file_get_contents(__DIR__.'/../../Modules/SendAndSetStatus/Public/css/style.css');
+
+        $this->assertStringContainsString('.sc-reply-submit', $css);
+        $this->assertStringContainsString('display: none', $css);
+    }
 }
