@@ -161,6 +161,52 @@ class AgentFoldersServiceProviderTest extends TestCase
         $this->assertFalse(\Eventy::filter('folder.update_counters', false, $folder));
     }
 
+    /**
+     * The whole design here rests on registering after Custom Folders'
+     * priority-20 listeners rather than editing their file. Custom Folders
+     * isn't installed in this repo, so this stands a minimal listener in
+     * for its two relevant hooks - discards its input and rebuilds a fresh
+     * query (folder.conversations_query), and writes deliberately wrong
+     * counts to prove they get corrected, not just left alone
+     * (folder.update_counters) - matching the real module's own shape
+     * closely enough to prove the priority ordering actually holds, not
+     * just that our own closures are internally consistent.
+     */
+    public function test_runs_after_a_competing_priority_20_listener()
+    {
+        $folder = $this->assigneeFolder($this->agentA->id);
+
+        $calls = 0;
+        \Eventy::addFilter('folder.conversations_query', function ($query, $folder, $user_id) {
+            if ($folder->type != self::CUSTOM_FOLDER_TYPE) {
+                return $query;
+            }
+
+            return Conversation::select('conversations.*')
+                ->where('mailbox_id', $folder->mailbox_id)
+                ->where('state', Conversation::STATE_PUBLISHED);
+        }, 20, 3);
+
+        \Eventy::addFilter('folder.update_counters', function ($updated, $folder) use (&$calls) {
+            if ($folder->type != self::CUSTOM_FOLDER_TYPE) {
+                return $updated;
+            }
+            $calls++;
+            $folder->active_count = 999999;
+            $folder->total_count = 999999;
+            $folder->save();
+
+            return true;
+        }, 20, 2);
+
+        $updated = \Eventy::filter('folder.update_counters', false, $folder);
+
+        $this->assertSame(1, $calls, 'the competing listener must actually run, not be bypassed');
+        $this->assertTrue($updated);
+        $this->assertSame(1, $folder->active_count, 'our priority-30 listener must correct the count after the competing one writes it wrong');
+        $this->assertSame(2, $folder->total_count);
+    }
+
     public function test_get_nearby_query_restricts_to_the_fixed_assignee()
     {
         $folder = $this->assigneeFolder($this->agentA->id);
