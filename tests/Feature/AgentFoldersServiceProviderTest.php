@@ -87,7 +87,7 @@ class AgentFoldersServiceProviderTest extends TestCase
     {
         $folder = $this->assigneeFolder($this->agentA->id);
 
-        $query = \Eventy::filter('folder.conversations_query', [$this->baseQuery(), $folder, $this->agentB->id]);
+        $query = \Eventy::filter('folder.conversations_query', $this->baseQuery(), $folder, $this->agentB->id);
         $ids = $query->pluck('id')->all();
 
         $this->assertContains($this->conversationA1->id, $ids);
@@ -105,8 +105,8 @@ class AgentFoldersServiceProviderTest extends TestCase
     {
         $folder = $this->assigneeFolder($this->agentA->id);
 
-        $asViewedByA = \Eventy::filter('folder.conversations_query', [$this->baseQuery(), $folder, $this->agentA->id])->pluck('id')->all();
-        $asViewedByB = \Eventy::filter('folder.conversations_query', [$this->baseQuery(), $folder, $this->agentB->id])->pluck('id')->all();
+        $asViewedByA = \Eventy::filter('folder.conversations_query', $this->baseQuery(), $folder, $this->agentA->id)->pluck('id')->all();
+        $asViewedByB = \Eventy::filter('folder.conversations_query', $this->baseQuery(), $folder, $this->agentB->id)->pluck('id')->all();
 
         sort($asViewedByA);
         sort($asViewedByB);
@@ -120,7 +120,7 @@ class AgentFoldersServiceProviderTest extends TestCase
             'type'       => self::CUSTOM_FOLDER_TYPE,
         ]);
 
-        $ids = \Eventy::filter('folder.conversations_query', [$this->baseQuery(), $folder, $this->agentB->id])->pluck('id')->all();
+        $ids = \Eventy::filter('folder.conversations_query', $this->baseQuery(), $folder, $this->agentB->id)->pluck('id')->all();
 
         $this->assertContains($this->conversationA1->id, $ids);
         $this->assertContains($this->conversationB->id, $ids);
@@ -135,7 +135,7 @@ class AgentFoldersServiceProviderTest extends TestCase
         $folder->meta = ['assignee_id' => $this->agentA->id];
         $folder->save();
 
-        $ids = \Eventy::filter('folder.conversations_query', [$this->baseQuery(), $folder, $this->agentB->id])->pluck('id')->all();
+        $ids = \Eventy::filter('folder.conversations_query', $this->baseQuery(), $folder, $this->agentB->id)->pluck('id')->all();
 
         $this->assertContains($this->conversationB->id, $ids, 'assignee_id must only apply to Custom Folders-type folders');
     }
@@ -144,7 +144,7 @@ class AgentFoldersServiceProviderTest extends TestCase
     {
         $folder = $this->assigneeFolder($this->agentA->id);
 
-        $updated = \Eventy::filter('folder.update_counters', [false, $folder]);
+        $updated = \Eventy::filter('folder.update_counters', false, $folder);
 
         $this->assertTrue($updated);
         $this->assertSame(1, $folder->active_count, 'only conversationA1 is active and assigned to agent A');
@@ -158,16 +158,14 @@ class AgentFoldersServiceProviderTest extends TestCase
             'type'       => self::CUSTOM_FOLDER_TYPE,
         ]);
 
-        $this->assertFalse(\Eventy::filter('folder.update_counters', [false, $folder]));
+        $this->assertFalse(\Eventy::filter('folder.update_counters', false, $folder));
     }
 
     public function test_get_nearby_query_restricts_to_the_fixed_assignee()
     {
         $folder = $this->assigneeFolder($this->agentA->id);
 
-        $query = \Eventy::filter('conversation.get_nearby_query', [
-            $this->baseQuery(), $this->conversationA1, 'next', $folder,
-        ]);
+        $query = \Eventy::filter('conversation.get_nearby_query', $this->baseQuery(), $this->conversationA1, 'next', $folder);
         $ids = $query->pluck('id')->all();
 
         $this->assertContains($this->conversationA2Closed->id, $ids);

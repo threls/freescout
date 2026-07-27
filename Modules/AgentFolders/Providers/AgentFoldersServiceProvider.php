@@ -98,7 +98,7 @@ class AgentFoldersServiceProvider extends ServiceProvider
             // could carry assignee_id while Custom Folders is deactivated.
             $base_query = Conversation::where('conversations.mailbox_id', $folder->mailbox_id)
                 ->where('conversations.state', Conversation::STATE_PUBLISHED);
-            $query = \Eventy::filter('folder.conversations_query', [$base_query, $folder, $folder->user_id]);
+            $query = \Eventy::filter('folder.conversations_query', $base_query, $folder, $folder->user_id);
 
             $active_query = clone $query;
             $folder->active_count = $active_query->where('conversations.status', Conversation::STATUS_ACTIVE)->count();
