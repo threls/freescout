@@ -8,16 +8,14 @@
 </div>
 
 
-<div class="form-inline">
-    <div class="form-group">
-        <label>{{ __('Search by Ticket #, Email or Subject') }}</label>
+<div class="form-group">
+    <label>{{ __('Search by Ticket #, Email or Subject') }}</label>
 
-        <div class="input-group">
-            <input type="text" class="form-control merge-conv-number" placeholder="{{ __('e.g. 123, jane@example.com, refund') }}">
-            <span class="input-group-btn">
-                <button class="btn btn-default btn-merge-search"  data-loading-text="{{ __('Search') }}…" type="button">{{ __('Search') }}</button>
-            </span>
-        </div>
+    <div class="input-group">
+        <input type="text" class="form-control merge-conv-number" placeholder="{{ __('e.g. 123, jane@example.com, refund') }}">
+        <span class="input-group-btn">
+            <button class="btn btn-default btn-merge-search"  data-loading-text="{{ __('Search') }}…" type="button">{{ __('Search') }}</button>
+        </span>
     </div>
 </div>
 
