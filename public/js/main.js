@@ -3243,7 +3243,16 @@ function initMergeConvSelect()
 	// regardless of how many times this function runs, and delegating from
 	// document means newly-injected search rows are covered without
 	// needing their own bind at all.
-	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-id', function() {
+	//
+	// Scoped to just the two result containers, NOT .conv-merge-selected:
+	// the chip cloned into .conv-merge-selected on selection keeps the same
+	// .conv-merge-id class as the row it came from (it's a clone of the
+	// same markup), so an unscoped '.conv-merge-id' selector here also
+	// matches clicks on already-selected chips - meaning a click meant to
+	// deselect one would fire both its own direct deselect handler AND this
+	// one, which re-adds it (or worse, mismatches against stale state) a
+	// second time in the same click.
+	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-list .conv-merge-id, .conv-merge-search-result .conv-merge-id', function() {
 		$('.btn-merge-conv:visible:first').removeAttr('disabled');
 
 		var checkbox_container = $(this).parent();
