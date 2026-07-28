@@ -45,7 +45,11 @@
     </div>
 @endif
 
-<div class="conv-merge-selected-summary text-help margin-top hidden"></div>
+<div class="conv-merge-selected-list margin-top hidden">
+    <label>{{ __('Selected for Merge') }}</label>
+
+    <table class="table table-striped"></table>
+</div>
 
 <div class="form-group margin-top-10">
 	<button class="btn btn-primary btn-merge-conv" data-loading-text="{{ __('Merge') }}…" type="submit" disabled>{{ __('Merge') }}</button>
