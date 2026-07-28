@@ -3166,6 +3166,14 @@ function initMergeConv()
 			e.preventDefault();
 		});
 
+		// Search on Enter
+		$(".merge-conv-number:visible:first").on('keydown', function(e){
+			if (e.which == 13) {
+				e.preventDefault();
+				$(".btn-merge-search:visible:first").click();
+			}
+		});
+
 		$(".btn-merge-search:visible:first").click(function(e){
 			var button = $(this);
 
