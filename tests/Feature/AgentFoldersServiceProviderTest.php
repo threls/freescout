@@ -151,6 +151,37 @@ class AgentFoldersServiceProviderTest extends TestCase
         $this->assertSame(2, $folder->total_count, 'both of agent A\'s conversations count, active and closed');
     }
 
+    /**
+     * Reproduces the exact bug found live on the demo site: a folder gets
+     * created with only meta.assignee_id set (no tag, "Show Only To",
+     * own_only, or unassigned) - the combination Custom Folders' own
+     * controller does not treat as "something changed that needs a
+     * recount", so it never calls its own setCounters() at all. Without the
+     * Folder::saved() observer, the badge would sit at the row's stale
+     * default until something unrelated (a new conversation, a status
+     * change, or the hourly cron) eventually recalculated it. This asserts
+     * the count is correct the moment the folder is saved, with no
+     * separate trigger of any kind - not via \Eventy::filter('folder.
+     * update_counters', ...) like the test above, and not via anything
+     * else either.
+     */
+    public function test_counter_is_correct_immediately_on_creation_with_no_other_trigger()
+    {
+        $folder = new Folder();
+        $folder->mailbox_id = $this->mailbox->id;
+        $folder->type = self::CUSTOM_FOLDER_TYPE;
+        $folder->meta = ['assignee_id' => $this->agentA->id];
+        $folder->save();
+
+        $this->assertSame(1, $folder->active_count, 'only conversationA1 is active and assigned to agent A');
+        $this->assertSame(2, $folder->total_count, 'both of agent A\'s conversations count, active and closed');
+
+        // Must be persisted, not just set on the in-memory instance.
+        $fromDb = Folder::find($folder->id);
+        $this->assertSame(1, $fromDb->active_count);
+        $this->assertSame(2, $fromDb->total_count);
+    }
+
     public function test_update_counters_is_a_no_op_without_assignee_meta()
     {
         $folder = factory(Folder::class)->create([
