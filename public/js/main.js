@@ -3173,7 +3173,7 @@ function initMergeConv()
 
 			fsAjax({
 					action: 'merge_search',
-					number: $('.merge-conv-number:visible:first').val(),
+					q: $('.merge-conv-number:visible:first').val(),
 					cur_conv_id: getGlobalAttr('conversation_id')
 				},
 				laroute.route('conversations.ajax'),
@@ -3226,7 +3226,16 @@ function initConvAssigneeFilter()
 
 function initMergeConvSelect()
 {
-	$('.conv-merge-id').click(function() {
+	// Delegated + namespaced: this runs again after every search (ARMS-29
+	// can return up to 20 fresh rows per search), and a plain $('.conv-
+	// merge-id').click(...) would stack a new handler onto every checkbox
+	// already in the DOM - including the persistent Previous Conversations
+	// ones - each time it's called, firing that many times per click after
+	// a few searches. off() before on() keeps exactly one handler bound
+	// regardless of how many times this function runs, and delegating from
+	// document means newly-injected search rows are covered without
+	// needing their own bind at all.
+	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-id', function() {
 		$('.btn-merge-conv:visible:first').removeAttr('disabled');
 
 		var checkbox_container = $(this).parent();
@@ -3242,9 +3251,12 @@ function initMergeConvSelect()
 
 			selected_list.append(html);
 
-			// Remove conv from selected list
+			// Remove conv from selected list. The row being re-shown may
+			// live in either the Previous Conversations list or the
+			// search results (ARMS-29) - both are searched since a
+			// conversation can only appear selected from one of them.
 			selected_list.children().find('.conv-merge-id:last').attr('checked', 'checked').click(function(e){
-				$('.conv-merge-list:visible:first').children()
+				$('.conv-merge-list:visible:first, .conv-merge-search-result:visible:first').children()
 					.find('.conv-merge-id[value="'+parseInt($(this).val())+'"]:first')
 					.parents('tr:first').show();
 				$(this).parent().parent().remove();
@@ -3255,11 +3267,7 @@ function initMergeConvSelect()
 			});
 		}
 
-		if ($(this).hasClass('conv-merge-searched')) {
-			$('.conv-merge-search-result:first').addClass('hidden');
-		} else {
-			checkbox_container.parents('tr:first').hide();
-		}
+		checkbox_container.parents('tr:first').hide();
 
 		$(this).prop("checked", false);
 	});

@@ -10,10 +10,10 @@
 
 <div class="form-inline">
     <div class="form-group">
-        <label>{{ __('Search Conversation by Number') }} (#)</label>
+        <label>{{ __('Search by Ticket #, Email or Subject') }}</label>
 
         <div class="input-group">
-            <input type="number" class="form-control merge-conv-number" >
+            <input type="text" class="form-control merge-conv-number" placeholder="{{ __('e.g. 123, jane@example.com, refund') }}">
             <span class="input-group-btn">
                 <button class="btn btn-default btn-merge-search"  data-loading-text="{{ __('Search') }}…" type="button">{{ __('Search') }}</button>
             </span>

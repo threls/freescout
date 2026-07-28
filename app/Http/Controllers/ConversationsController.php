@@ -29,6 +29,11 @@ class ConversationsController extends Controller
 {
     const PREV_CONVERSATIONS_LIMIT = 5;
 
+    // Merge dialog's email/subject/number search (ARMS-29). Deliberately
+    // capped: this is a quick-pick popup, not a full results page.
+    const MERGE_SEARCH_LIMIT = 20;
+    const MERGE_SEARCH_MIN_LENGTH = 2;
+
     /**
      * Create a new controller instance.
      *
@@ -2353,20 +2358,55 @@ class ConversationsController extends Controller
                 break;
 
             case 'merge_search':
-                $conversation = Conversation::where(Conversation::numberFieldName(), $request->number)->first();
+                // Accepts a ticket number, a customer email, or a subject
+                // keyword from the same input (ARMS-29) - $request->number
+                // is still read for old cached JS during a rolling deploy,
+                // $request->q is what current JS actually sends.
+                $q = trim($request->q ?? $request->number ?? '');
 
-                if (!$conversation || $conversation->id == ($request->cur_conv_id ?? '')) {
+                $cur_conversation = Conversation::find($request->cur_conv_id);
+
+                if (!$cur_conversation || !$user->can('view', $cur_conversation)) {
                     $response['msg'] = __('Conversation not found');
-                }
-                if (!$response['msg'] && !$user->can('view', $conversation)) {
-                    $response['msg'] = __('Conversation not found');
+                } elseif (!ctype_digit($q) && mb_strlen($q) < self::MERGE_SEARCH_MIN_LENGTH) {
+                    // Numeric input is exempt: it's an exact-match ticket
+                    // number lookup, not a broad LIKE scan, so a single
+                    // digit carries no "too short, matches everything" risk
+                    // the way a 1-character text query would - and tickets
+                    // #1-9 are a single digit by default (Conversation::
+                    // numberFieldName() is the id column unless custom
+                    // numbering is configured).
+                    $response['msg'] = __('Enter at least :count characters', ['count' => self::MERGE_SEARCH_MIN_LENGTH]);
                 }
 
                 if (!$response['msg']) {
-                    $response['html'] = \View::make('conversations/partials/merge_search_result')->with([
-                            'conversation' => $conversation,
-                        ])->render();
-                    $response['status'] = 'success';
+                    // Reuses the same search engine the main conversation
+                    // search uses (Conversation::search()) rather than a
+                    // bespoke query - it already matches subject, customer
+                    // email/name and ticket number in one pass, and already
+                    // restricts to mailboxes the user can view.
+                    $conversations = Conversation::search($q, [
+                            'mailbox' => $cur_conversation->mailbox_id,
+                            'state'   => [Conversation::STATE_PUBLISHED],
+                        ], $user)
+                        ->where('conversations.id', '<>', $cur_conversation->id)
+                        ->where('conversations.status', '!=', Conversation::STATUS_SPAM)
+                        ->limit(self::MERGE_SEARCH_LIMIT + 1)
+                        ->get();
+
+                    $has_more = $conversations->count() > self::MERGE_SEARCH_LIMIT;
+                    $conversations = $conversations->take(self::MERGE_SEARCH_LIMIT);
+
+                    if ($conversations->isEmpty()) {
+                        $response['msg'] = __('Conversation not found');
+                    } else {
+                        $response['html'] = \View::make('conversations/partials/merge_search_result')->with([
+                                'conversations' => $conversations,
+                                'has_more' => $has_more,
+                                'limit' => self::MERGE_SEARCH_LIMIT,
+                            ])->render();
+                        $response['status'] = 'success';
+                    }
                 }
 
                 break;
