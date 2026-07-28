@@ -2358,10 +2358,7 @@ class ConversationsController extends Controller
                 break;
 
             case 'merge_search':
-                // Accepts a ticket number, a customer email, or a subject
-                // keyword from the same input (ARMS-29) - $request->number
-                // is still read for old cached JS during a rolling deploy,
-                // $request->q is what current JS actually sends.
+                // $request->number is still read for old cached JS.
                 $q = trim($request->q ?? $request->number ?? '');
 
                 $cur_conversation = Conversation::find($request->cur_conv_id);
@@ -2369,21 +2366,15 @@ class ConversationsController extends Controller
                 if (!$cur_conversation || !$user->can('view', $cur_conversation)) {
                     $response['msg'] = __('Conversation not found');
                 } elseif (!ctype_digit($q) && mb_strlen($q) < self::MERGE_SEARCH_MIN_LENGTH) {
-                    // Numeric input is exempt: it's an exact-match ticket
-                    // number lookup, not a broad LIKE scan, so a single
-                    // digit carries no "too short, matches everything" risk
-                    // the way a 1-character text query would - and tickets
-                    // #1-9 are a single digit by default (Conversation::
-                    // numberFieldName() is the id column unless custom
-                    // numbering is configured).
+                    // Numeric input is exempt - it's an exact-match lookup,
+                    // not a broad scan, so a single digit is safe (and
+                    // tickets #1-9 are single digits by default).
                     $response['msg'] = __('Enter at least :count characters', ['count' => self::MERGE_SEARCH_MIN_LENGTH]);
                 }
 
                 if (!$response['msg']) {
-                    // Reuses the same search engine the main conversation
-                    // search uses (Conversation::search()) rather than a
-                    // bespoke query - it already matches subject, customer
-                    // email/name and ticket number in one pass, and already
+                    // Reuses the main search engine rather than a bespoke
+                    // query - already matches subject/email/number and
                     // restricts to mailboxes the user can view.
                     $conversations = Conversation::search($q, [
                             'mailbox' => $cur_conversation->mailbox_id,
