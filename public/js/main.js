@@ -3234,16 +3234,12 @@ function initConvAssigneeFilter()
 
 function initMergeConvSelect()
 {
-	// Delegated + namespaced: this runs again after every search (ARMS-29
-	// can return up to 20 fresh rows per search), and a plain $('.conv-
-	// merge-id').click(...) would stack a new handler onto every checkbox
-	// already in the DOM - including the persistent Previous Conversations
-	// ones - each time it's called, firing that many times per click after
-	// a few searches. off() before on() keeps exactly one handler bound
-	// regardless of how many times this function runs, and delegating from
-	// document means newly-injected search rows are covered without
-	// needing their own bind at all.
-	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-id', function() {
+	// Delegated + namespaced (off before on) since this re-runs after every
+	// search: a plain $('.conv-merge-id').click() would stack a new handler
+	// on every existing checkbox each time. Scoped to the two result lists,
+	// excluding .conv-merge-selected - its chips are clones of the same
+	// markup and would otherwise match too, double-firing on deselect.
+	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-list .conv-merge-id, .conv-merge-search-result .conv-merge-id', function() {
 		$('.btn-merge-conv:visible:first').removeAttr('disabled');
 
 		var checkbox_container = $(this).parent();
@@ -3259,10 +3255,8 @@ function initMergeConvSelect()
 
 			selected_list.append(html);
 
-			// Remove conv from selected list. The row being re-shown may
-			// live in either the Previous Conversations list or the
-			// search results (ARMS-29) - both are searched since a
-			// conversation can only appear selected from one of them.
+			// Remove conv from selected list - the row may be in either
+			// Previous Conversations or the search results.
 			selected_list.children().find('.conv-merge-id:last').attr('checked', 'checked').click(function(e){
 				$('.conv-merge-list:visible:first, .conv-merge-search-result:visible:first').children()
 					.find('.conv-merge-id[value="'+parseInt($(this).val())+'"]:first')
