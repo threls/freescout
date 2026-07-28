@@ -3226,7 +3226,16 @@ function initConvAssigneeFilter()
 
 function initMergeConvSelect()
 {
-	$('.conv-merge-id').click(function() {
+	// Delegated + namespaced: this runs again after every search (ARMS-29
+	// can return up to 20 fresh rows per search), and a plain $('.conv-
+	// merge-id').click(...) would stack a new handler onto every checkbox
+	// already in the DOM - including the persistent Previous Conversations
+	// ones - each time it's called, firing that many times per click after
+	// a few searches. off() before on() keeps exactly one handler bound
+	// regardless of how many times this function runs, and delegating from
+	// document means newly-injected search rows are covered without
+	// needing their own bind at all.
+	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-id', function() {
 		$('.btn-merge-conv:visible:first').removeAttr('disabled');
 
 		var checkbox_container = $(this).parent();
