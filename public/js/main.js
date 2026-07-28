@@ -3245,12 +3245,19 @@ function initMergeConvSelect()
 	// rows from every future search too, no rebinding needed per search.
 	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-list .conv-merge-id, .conv-merge-search-result .conv-merge-id', function() {
 		var conv_id = $(this).val();
+		var checked = $(this).is(':checked');
 
-		if ($(this).is(':checked')) {
+		if (checked) {
 			fs_merge_selected_ids[conv_id] = $(this).closest('.checkbox').find('a:first').text().trim();
 		} else {
 			delete fs_merge_selected_ids[conv_id];
 		}
+
+		// The same conversation can appear in both Previous Conversations
+		// and the search results at once - keep every checkbox for this id
+		// in sync, not just the one clicked, so toggling one doesn't leave
+		// a stale, misleading checked state on the other.
+		$('.conv-merge-list .conv-merge-id[value="'+parseInt(conv_id)+'"], .conv-merge-search-result .conv-merge-id[value="'+parseInt(conv_id)+'"]').prop('checked', checked);
 
 		updateMergeSelectedSummary();
 	});
