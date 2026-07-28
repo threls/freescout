@@ -3293,12 +3293,13 @@ function renderMergeSelectedList()
 	ids.forEach(function(id) {
 		var label = $('<div>').text(fs_merge_selected_ids[id]).html(); // escape
 		rows += '<tr><td>'
-			+'<a href="javascript:void(0)" class="conv-merge-remove pull-right" data-conv-id="'+id+'" title="'+Lang.get('messages.remove')+'"><i class="glyphicon glyphicon-remove"></i></a> '
+			+'<a href="javascript:void(0)" class="conv-merge-remove pull-right" data-conv-id="'+id+'" data-toggle="tooltip" title="'+Lang.get('messages.remove')+'"><i class="glyphicon glyphicon-remove"></i></a> '
 			+label
 			+'</td></tr>';
 	});
 
 	list.find('table:first').html(rows);
+	initTooltips();
 
 	if (ids.length) {
 		list.removeClass('hidden');
