@@ -86,6 +86,18 @@ script, right after `onholdstatus:patch-workflows`, so it self-heals after
 every Custom Folders update the same way that patch already does for
 Workflows.
 
+**Must run after `freescout:clear-cache` (or at least `cache:clear`), not
+before** - nwidart/laravel-modules caches which modules exist/are active in
+Laravel's cache store for up to 60 minutes (`config/modules.php`, key
+`laravel-modules`). A plain `git pull` + `composer install` never refreshes
+that cache, only specific actions (e.g. activating a module through the web
+UI) do. Deploying this module for the first time and immediately running
+this command in the same deploy will fail with "There are no commands
+defined in the agentfolders namespace" if the cache isn't cleared first
+(hit for real on this module's first deploy, 28 Jul 2026 -
+`onholdstatus:patch-workflows` still worked in that same run only because
+`OnHoldStatus` was already in the stale cached list from a prior deploy).
+
 The patch's exact expected text was transcribed from a live-server
 terminal paste, not verified byte-for-byte against the file - the
 occurrence-count guard above is what protects the real files if that
