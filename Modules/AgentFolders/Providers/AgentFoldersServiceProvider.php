@@ -3,6 +3,8 @@
 namespace Modules\AgentFolders\Providers;
 
 use App\Conversation;
+use App\Folder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -31,6 +33,17 @@ use Illuminate\Support\ServiceProvider;
  * blob. See Console/PatchCustomFoldersAssignee.php for that - deliberately
  * kept separate from the filtering logic here, so the only thing touching
  * Custom Folders' own files is the minimum needed to capture the selection.
+ *
+ * The counter badge also needs a Folder::saved() observer (ARMS-46, found
+ * live on the demo site): Custom Folders' controller only recalculates
+ * counters on create/update when tag_id/user_id/own_only/unassigned change
+ * - it has no idea assignee_id exists, so a folder created with only that
+ * field set never gets its counter recalculated at all, and shows whatever
+ * stale/default value the row already had until something unrelated (a new
+ * conversation, a status change, or the hourly freescout:update-folder-
+ * counters cron) eventually triggers a real recount through folder.update_
+ * counters above. The observer below closes that gap by recomputing
+ * immediately, every time an assignee-scoped folder is saved.
  */
 class AgentFoldersServiceProvider extends ServiceProvider
 {
@@ -56,6 +69,18 @@ class AgentFoldersServiceProvider extends ServiceProvider
     public function boot()
     {
         $this->hooks();
+
+        // Fires on create AND update. Deliberately not $folder->save() to
+        // persist (see recomputeAndPersist()): that would refire this same
+        // event on every counter correction triggered from folder.update_
+        // counters below (which also ends by calling recomputeAndPersist()),
+        // recursing one extra level every single time it runs.
+        Folder::saved(function ($folder) {
+            $assignee_id = $this->assigneeIdFor($folder);
+            if (!empty($assignee_id)) {
+                $this->recomputeAndPersist($folder);
+            }
+        });
     }
 
     public function register()
@@ -87,23 +112,7 @@ class AgentFoldersServiceProvider extends ServiceProvider
                 return $updated;
             }
 
-            // Re-invokes the same filter chain that lists the folder's
-            // conversations (already assignee-aware, since it's the same
-            // hook this class also answers above) rather than re-deriving
-            // Custom Folders' mailbox/tag/status query-building logic here.
-            // Seeded with a real base query (mailbox + published) rather
-            // than null: Custom Folders' own listener normally replaces
-            // this seed with its own fresh query before ours runs, but this
-            // filter must not assume that listener is present - a folder
-            // could carry assignee_id while Custom Folders is deactivated.
-            $base_query = Conversation::where('conversations.mailbox_id', $folder->mailbox_id)
-                ->where('conversations.state', Conversation::STATE_PUBLISHED);
-            $query = \Eventy::filter('folder.conversations_query', $base_query, $folder, $folder->user_id);
-
-            $active_query = clone $query;
-            $folder->active_count = $active_query->where('conversations.status', Conversation::STATUS_ACTIVE)->count();
-            $folder->total_count = (clone $query)->count();
-            $folder->save();
+            $this->recomputeAndPersist($folder);
 
             return true;
         }, 30, 2);
@@ -131,5 +140,47 @@ class AgentFoldersServiceProvider extends ServiceProvider
         }
 
         return $folder->meta[self::META_KEY] ?? null;
+    }
+
+    /**
+     * Recomputes active_count/total_count for an assignee-scoped folder and
+     * persists them. Called from both the folder.update_counters filter
+     * above and the Folder::saved() observer in boot() - shared here so
+     * fixing/adjusting the counting logic only has one place to change.
+     *
+     * Persists via a raw query-builder update, not $folder->save(): this can
+     * be triggered by our own Folder::saved() observer, and Eloquent's
+     * save() firing model events would refire that same observer every
+     * time this runs. A query-builder update doesn't fire model events at
+     * all, so calling it from either trigger is safe. The in-memory $folder
+     * object's attributes are still updated directly alongside it, so any
+     * code holding this same instance (e.g. the caller in folder.update_
+     * counters) sees the fresh values without needing to refetch.
+     */
+    protected function recomputeAndPersist($folder)
+    {
+        // Re-invokes the same filter chain that lists the folder's
+        // conversations (already assignee-aware, since it's the same hook
+        // this class also answers above) rather than re-deriving Custom
+        // Folders' mailbox/tag/status query-building logic here. Seeded
+        // with a real base query (mailbox + published) rather than null:
+        // Custom Folders' own listener normally replaces this seed with its
+        // own fresh query before ours runs, but this must not assume that
+        // listener is present - a folder could carry assignee_id while
+        // Custom Folders is deactivated.
+        $base_query = Conversation::where('conversations.mailbox_id', $folder->mailbox_id)
+            ->where('conversations.state', Conversation::STATE_PUBLISHED);
+        $query = \Eventy::filter('folder.conversations_query', $base_query, $folder, $folder->user_id);
+
+        $active_count = (clone $query)->where('conversations.status', Conversation::STATUS_ACTIVE)->count();
+        $total_count = (clone $query)->count();
+
+        DB::table('folders')->where('id', $folder->id)->update([
+            'active_count' => $active_count,
+            'total_count'  => $total_count,
+        ]);
+
+        $folder->active_count = $active_count;
+        $folder->total_count = $total_count;
     }
 }
