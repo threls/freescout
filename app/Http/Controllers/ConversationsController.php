@@ -2368,7 +2368,14 @@ class ConversationsController extends Controller
 
                 if (!$cur_conversation || !$user->can('view', $cur_conversation)) {
                     $response['msg'] = __('Conversation not found');
-                } elseif (mb_strlen($q) < self::MERGE_SEARCH_MIN_LENGTH) {
+                } elseif (!ctype_digit($q) && mb_strlen($q) < self::MERGE_SEARCH_MIN_LENGTH) {
+                    // Numeric input is exempt: it's an exact-match ticket
+                    // number lookup, not a broad LIKE scan, so a single
+                    // digit carries no "too short, matches everything" risk
+                    // the way a 1-character text query would - and tickets
+                    // #1-9 are a single digit by default (Conversation::
+                    // numberFieldName() is the id column unless custom
+                    // numbering is configured).
                     $response['msg'] = __('Enter at least :count characters', ['count' => self::MERGE_SEARCH_MIN_LENGTH]);
                 }
 
@@ -2396,6 +2403,7 @@ class ConversationsController extends Controller
                         $response['html'] = \View::make('conversations/partials/merge_search_result')->with([
                                 'conversations' => $conversations,
                                 'has_more' => $has_more,
+                                'limit' => self::MERGE_SEARCH_LIMIT,
                             ])->render();
                         $response['status'] = 'success';
                     }

@@ -12,5 +12,5 @@
     @endforeach
 </table>
 @if ($has_more ?? false)
-    <div class="text-help">{{ __('Showing the first :count results — narrow your search for more.', ['count' => \App\Http\Controllers\ConversationsController::MERGE_SEARCH_LIMIT]) }}</div>
+    <div class="text-help">{{ __('Showing the first :count results — narrow your search for more.', ['count' => $limit]) }}</div>
 @endif

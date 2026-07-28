@@ -31,6 +31,14 @@ class MergeSearchTest extends TestCase
 
     protected function tearDown(): void
     {
+        // Undoes test_finds_single_digit_ticket_number_after_min_length_fix's
+        // config change - numberFieldName() caches config('app.custom_number')
+        // in a static the first time it's read, so both need resetting or a
+        // later test in this same process would keep seeing 'number' as the
+        // ticket-number field instead of the real default 'id'.
+        Conversation::$custom_number_cache = null;
+        config(['app.custom_number' => false]);
+
         \DB::table('threads')->whereIn('conversation_id', $this->conversationIds)->delete();
         \DB::table('conversations')->whereIn('id', $this->conversationIds)->delete();
         \DB::table('customers')->whereIn('id', $this->customerIds)->delete();
@@ -273,5 +281,72 @@ class MergeSearchTest extends TestCase
         preg_match_all('/#\d+/', $response['html'], $matches);
         $this->assertCount($limit, $matches[0], 'result rows must be capped at MERGE_SEARCH_LIMIT');
         $this->assertStringContainsString('Showing the first', $response['html']);
+    }
+
+    /**
+     * Regression test for a self-review finding: the min-length gate was
+     * rejecting single-digit ticket numbers before the search ever ran.
+     * Conversation::numberFieldName() defaults to the id column, whose
+     * value in this shared, never-reset test database is already far past
+     * one digit by now - so this forces the "number" column instead (behind
+     * config('app.custom_number')) to get a deterministic single-digit
+     * ticket number regardless of what's already in the database.
+     */
+    public function test_finds_single_digit_ticket_number_after_min_length_fix()
+    {
+        Conversation::$custom_number_cache = null;
+        config(['app.custom_number' => true]);
+
+        $mailbox = $this->makeMailbox();
+        $folder = $this->makeFolder($mailbox->id);
+        $user = $this->makeUser($mailbox->id);
+        $customer = $this->makeCustomer();
+
+        $curConversation = $this->makeConversation($mailbox->id, $folder->id, $customer->id, 'a@example.org', 'Current ticket');
+        $curConversation->number = 1;
+        $curConversation->save();
+
+        $target = $this->makeConversation($mailbox->id, $folder->id, $customer->id, 'b@example.org', 'Unrelated subject');
+        $target->number = 5;
+        $target->save();
+
+        $response = $this->search('5', $curConversation->id, $user);
+
+        $this->assertSame('success', $response['status']);
+        $this->assertStringContainsString('#5', $response['html']);
+    }
+
+    /**
+     * Locks in the deliberate behavior change flagged in self-review: unlike
+     * the old number-only search (permission-gated only, no mailbox
+     * restriction), a ticket-number search is now scoped to the current
+     * conversation's own mailbox like every other merge search. A matching
+     * number in a different mailbox the user can still view must not be
+     * offered as a merge target.
+     */
+    public function test_ticket_number_search_is_scoped_to_the_current_mailbox()
+    {
+        Conversation::$custom_number_cache = null;
+        config(['app.custom_number' => true]);
+
+        $mailboxA = $this->makeMailbox();
+        $mailboxB = $this->makeMailbox();
+        $folderA = $this->makeFolder($mailboxA->id);
+        $folderB = $this->makeFolder($mailboxB->id);
+        $user = $this->makeUser($mailboxA->id);
+        $user->mailboxes()->attach($mailboxB->id); // user CAN view both - mailbox scoping, not permission, must be what restricts here
+        $customer = $this->makeCustomer();
+
+        $curConversation = $this->makeConversation($mailboxA->id, $folderA->id, $customer->id, 'a@example.org', 'Current ticket');
+        $curConversation->number = 10;
+        $curConversation->save();
+
+        $otherMailboxTarget = $this->makeConversation($mailboxB->id, $folderB->id, $customer->id, 'b@example.org', 'Different mailbox ticket');
+        $otherMailboxTarget->number = 20;
+        $otherMailboxTarget->save();
+
+        $response = $this->search('20', $curConversation->id, $user);
+
+        $this->assertNotSame('success', $response['status'], 'a matching ticket number in a different mailbox must not be offered as a merge target');
     }
 }
