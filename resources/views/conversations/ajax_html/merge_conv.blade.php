@@ -45,9 +45,7 @@
     </div>
 @endif
 
-<div class="form-group conv-merge-selected margin-top">
-
-</div>
+<div class="conv-merge-selected-summary text-help margin-top hidden"></div>
 
 <div class="form-group margin-top-10">
 	<button class="btn btn-primary btn-merge-conv" data-loading-text="{{ __('Merge') }}…" type="submit" disabled>{{ __('Merge') }}</button>

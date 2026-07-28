@@ -22,6 +22,11 @@ var fs_filters = {};
 var fs_body_default = '<div><br></div>';
 var fs_prev_focus = true;
 var fs_checkbox_shift_last_checked = null;
+// Conversations picked in the merge dialog, keyed by id - reset each time
+// the dialog opens. A plain object rather than the DOM: each search replaces
+// the results list entirely, so a row checked from an earlier search would
+// lose its checked state the moment a later search overwrites it.
+var fs_merge_selected_ids = {};
 var upload_in_progress = false;
 
 var FS_STATUS_CLOSED = 3;
@@ -3132,6 +3137,7 @@ function initMergeConv()
 	$(document).ready(function() {
 		initTooltips();
 
+		fs_merge_selected_ids = {};
 		initMergeConvSelect();
 
 		$(".btn-merge-conv:visible:first").click(function(e){
@@ -3139,10 +3145,7 @@ function initMergeConv()
 
 			button.button('loading');
 
-			var conv_ids = [];
-			$('.conv-merge-selected:visible:first .conv-merge-id:checked').each(function() {
-				conv_ids.push($(this).val());
-			});
+			var conv_ids = Object.keys(fs_merge_selected_ids);
 
 			if (!conv_ids.length) {
 				return;
@@ -3191,11 +3194,15 @@ function initMergeConv()
 						$('.conv-merge-search-result:first td:first').html(response.html);
 						$('.conv-merge-search-result:first').removeClass('hidden');
 						initTooltips();
-						initMergeConvSelect();
+						// A conversation picked from an earlier search may be
+						// showing up again in this one - reflect that it's
+						// already selected rather than rendering unchecked.
+						$('.conv-merge-search-result:first .conv-merge-id').each(function() {
+							if (fs_merge_selected_ids.hasOwnProperty($(this).val())) {
+								$(this).prop('checked', true);
+							}
+						});
 					} else {
-						if ($('.conv-merge-search-result:first .conv-merge-id').is(':checked')) {
-							$('.btn-merge-conv:visible:first').attr('disabled', 'disabled');
-						}
 						$('.conv-merge-search-result:first td:first').html(response.html);
 						$('.conv-merge-search-result:first').addClass('hidden');
 					}
@@ -3234,45 +3241,44 @@ function initConvAssigneeFilter()
 
 function initMergeConvSelect()
 {
-	// Delegated + namespaced (off before on) since this re-runs after every
-	// search: a plain $('.conv-merge-id').click() would stack a new handler
-	// on every existing checkbox each time. Scoped to the two result lists,
-	// excluding .conv-merge-selected - its chips are clones of the same
-	// markup and would otherwise match too, double-firing on deselect.
+	// Delegated + namespaced (off before on): binding once here covers
+	// rows from every future search too, no rebinding needed per search.
 	$(document).off('click.mergeConvSelect').on('click.mergeConvSelect', '.conv-merge-list .conv-merge-id, .conv-merge-search-result .conv-merge-id', function() {
-		$('.btn-merge-conv:visible:first').removeAttr('disabled');
+		var conv_id = $(this).val();
+		var checked = $(this).is(':checked');
 
-		var checkbox_container = $(this).parent();
-		var selected_list = $('.conv-merge-selected:visible:first');
-		var clicked_conv_id = parseInt($(this).val());
-
-		// Do not add same conversation twice
-		if (!isNaN(clicked_conv_id) && !selected_list.children().find('.conv-merge-id[value="'+parseInt($(this).val())+'"]').length) {
-
-			var html = '<div class="alert alert-narrow alert-info">'
-				+checkbox_container[0].outerHTML
-				+'</div>';
-
-			selected_list.append(html);
-
-			// Remove conv from selected list - the row may be in either
-			// Previous Conversations or the search results.
-			selected_list.children().find('.conv-merge-id:last').attr('checked', 'checked').click(function(e){
-				$('.conv-merge-list:visible:first, .conv-merge-search-result:visible:first').children()
-					.find('.conv-merge-id[value="'+parseInt($(this).val())+'"]:first')
-					.parents('tr:first').show();
-				$(this).parent().parent().remove();
-
-				if (!selected_list.children().find('.conv-merge-id').length) {
-					$('.btn-merge-conv:visible:first').attr('disabled', 'disabled');
-				}
-			});
+		if (checked) {
+			fs_merge_selected_ids[conv_id] = $(this).closest('.checkbox').find('a:first').text().trim();
+		} else {
+			delete fs_merge_selected_ids[conv_id];
 		}
 
-		checkbox_container.parents('tr:first').hide();
+		// The same conversation can appear in both Previous Conversations
+		// and the search results at once - keep every checkbox for this id
+		// in sync, not just the one clicked, so toggling one doesn't leave
+		// a stale, misleading checked state on the other.
+		$('.conv-merge-list .conv-merge-id[value="'+parseInt(conv_id)+'"], .conv-merge-search-result .conv-merge-id[value="'+parseInt(conv_id)+'"]').prop('checked', checked);
 
-		$(this).prop("checked", false);
+		updateMergeSelectedSummary();
 	});
+}
+
+function updateMergeSelectedSummary()
+{
+	var labels = [];
+	$.each(fs_merge_selected_ids, function(id, label) {
+		labels.push(label);
+	});
+
+	var summary = $('.conv-merge-selected-summary:visible:first');
+
+	if (labels.length) {
+		summary.text(Lang.get('messages.merge_selected')+': '+labels.join(', ')).removeClass('hidden');
+		$('.btn-merge-conv:visible:first').removeAttr('disabled');
+	} else {
+		summary.addClass('hidden').text('');
+		$('.btn-merge-conv:visible:first').attr('disabled', 'disabled');
+	}
 }
 
 // Check if ajax request was successfull
