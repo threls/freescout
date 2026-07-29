@@ -3286,7 +3286,7 @@ function initMergeConvSelect()
 // results list a conversation was originally picked from.
 function renderMergeSelectedList()
 {
-	var list = $('.conv-merge-selected-list:visible:first');
+	var list = $('.conv-merge-selected-list:first');
 	var ids = Object.keys(fs_merge_selected_ids);
 	var rows = '';
 
