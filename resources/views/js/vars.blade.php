@@ -60,7 +60,7 @@ var LangMessages = {
             "invite_resent": "{{ __("Invite email has been resent") }}",
             "confirm_reset_password": "{{ __("Reset this User's password?") }}",
             "push_protocol_alert": "{{ __("HTTPS protocol is required for the browser push notifications to work.") }}",
-            "merge_selected": "{{ __("Selected") }}",
+            "remove": "{{ __("Remove") }}",
             "lost_connection": "{{ __("Lost internet connection") }}",
             "connection_restored": "{{ __("Connection restored") }}",
             "saved": "{{ __("Saved") }}",

@@ -3138,6 +3138,7 @@ function initMergeConv()
 		initTooltips();
 
 		fs_merge_selected_ids = {};
+		renderMergeSelectedList();
 		initMergeConvSelect();
 
 		$(".btn-merge-conv:visible:first").click(function(e){
@@ -3194,13 +3195,14 @@ function initMergeConv()
 						$('.conv-merge-search-result:first td:first').html(response.html);
 						$('.conv-merge-search-result:first').removeClass('hidden');
 						initTooltips();
-						// A conversation picked from an earlier search may be
-						// showing up again in this one - reflect that it's
-						// already selected rather than rendering unchecked.
+						// Set explicitly both ways (checked AND unchecked) rather
+						// than only checking matches - freshly-injected checkboxes
+						// aren't guaranteed to start unchecked (some browsers carry
+						// over a checked state by DOM position when replacing
+						// innerHTML), so anything not actually selected must be
+						// forced off too, not just left alone.
 						$('.conv-merge-search-result:first .conv-merge-id').each(function() {
-							if (fs_merge_selected_ids.hasOwnProperty($(this).val())) {
-								$(this).prop('checked', true);
-							}
+							$(this).prop('checked', fs_merge_selected_ids.hasOwnProperty($(this).val()));
 						});
 					} else {
 						$('.conv-merge-search-result:first td:first').html(response.html);
@@ -3259,24 +3261,51 @@ function initMergeConvSelect()
 		// a stale, misleading checked state on the other.
 		$('.conv-merge-list .conv-merge-id[value="'+parseInt(conv_id)+'"], .conv-merge-search-result .conv-merge-id[value="'+parseInt(conv_id)+'"]').prop('checked', checked);
 
-		updateMergeSelectedSummary();
+		renderMergeSelectedList();
+	});
+
+	// Deselect from the summary list itself - a plain link, deliberately
+	// not a checkbox and not sharing a class with the pickable rows, so it
+	// can never be double-matched by the delegated handler above the way
+	// the old clone-based chips were.
+	$(document).off('click.mergeConvRemove').on('click.mergeConvRemove', '.conv-merge-remove', function(e) {
+		e.preventDefault();
+
+		var conv_id = $(this).data('conv-id');
+		delete fs_merge_selected_ids[conv_id];
+
+		$('.conv-merge-list .conv-merge-id[value="'+parseInt(conv_id)+'"], .conv-merge-search-result .conv-merge-id[value="'+parseInt(conv_id)+'"]').prop('checked', false);
+
+		renderMergeSelectedList();
 	});
 }
 
-function updateMergeSelectedSummary()
+// Rebuilds the "Selected for Merge" list from scratch on every change -
+// keeps every selected conversation visible in one place regardless of
+// which search (if any) surfaced it, since a later search replaces the
+// results list a conversation was originally picked from.
+function renderMergeSelectedList()
 {
-	var labels = [];
-	$.each(fs_merge_selected_ids, function(id, label) {
-		labels.push(label);
+	var list = $('.conv-merge-selected-list:visible:first');
+	var ids = Object.keys(fs_merge_selected_ids);
+	var rows = '';
+
+	ids.forEach(function(id) {
+		var label = $('<div>').text(fs_merge_selected_ids[id]).html(); // escape
+		rows += '<tr><td>'
+			+'<a href="javascript:void(0)" class="conv-merge-remove pull-right" data-conv-id="'+id+'" data-toggle="tooltip" title="'+Lang.get('messages.remove')+'"><i class="glyphicon glyphicon-remove"></i></a> '
+			+label
+			+'</td></tr>';
 	});
 
-	var summary = $('.conv-merge-selected-summary:visible:first');
+	list.find('table:first').html(rows);
+	initTooltips();
 
-	if (labels.length) {
-		summary.text(Lang.get('messages.merge_selected')+': '+labels.join(', ')).removeClass('hidden');
+	if (ids.length) {
+		list.removeClass('hidden');
 		$('.btn-merge-conv:visible:first').removeAttr('disabled');
 	} else {
-		summary.addClass('hidden').text('');
+		list.addClass('hidden');
 		$('.btn-merge-conv:visible:first').attr('disabled', 'disabled');
 	}
 }
