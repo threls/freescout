@@ -8,6 +8,12 @@ use Illuminate\Support\ServiceProvider;
 class AppServiceProvider extends ServiceProvider
 {
     /**
+     * Name given to the robot user that authors macro-generated threads.
+     * See relabelMacrosRobotUser().
+     */
+    const MACROS_ROBOT_USER_NAME = 'Macro';
+
+    /**
      * Bootstrap any application services.
      *
      * @return void
@@ -17,6 +23,9 @@ class AppServiceProvider extends ServiceProvider
         // To avoid MySQL error in packages:
         // "SQLSTATE[42000]: Syntax error or access violation: 1071 Specified key was too long; max key length is 767 bytes"
         Schema::defaultStringLength(191);
+
+        // threls fork patch: see the method.
+        $this->relabelMacrosRobotUser();
 
         // Models observers
         \App\Mailbox::observe(\App\Observers\MailboxObserver::class);
@@ -52,6 +61,37 @@ class AppServiceProvider extends ServiceProvider
 
             return true;
         });
+    }
+
+    /**
+     * threls fork patch (ARMS-49): make the robot user that authors
+     * macro-generated threads read "Macro" rather than "Workflow".
+     *
+     * That word reaches the screen as *data*, not as a translatable string, so
+     * the resources/lang/en.json rename cannot touch it: the Workflows module
+     * (paid, not tracked in this repo) creates a User::TYPE_ROBOT account named
+     * from config('workflows.user_full_name'), and rewrites that account's name
+     * to match the config on every run. It surfaces as the thread author on
+     * every note a macro posts, and inside core's own
+     * ":person forwarded this conversation" line.
+     *
+     * The module reads that config at runtime, so setting it here is enough —
+     * no file of the module's is touched, and the change survives updates of
+     * it. Order does not matter either: mergeConfigFrom() merges a module's own
+     * file *under* whatever is already set, so this wins whether the module
+     * registers before or after this provider boots.
+     *
+     * Deliberately unconditional, which means the module's own
+     * WORKFLOWS_USER_FULL_NAME env var no longer does anything. That is the
+     * point — an env var set on one environment and forgotten on the next is
+     * exactly how this label would regress at go-live. Change the constant
+     * above to relabel, not the environment.
+     *
+     * @return void
+     */
+    protected function relabelMacrosRobotUser()
+    {
+        \Config::set('workflows.user_full_name', self::MACROS_ROBOT_USER_NAME);
     }
 
     /**
