@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Thread;
+use App\User;
 use Tests\TestCase;
 
 /**
@@ -12,13 +13,17 @@ use Tests\TestCase;
  *
  * The client's direction was to leave the macros themselves alone, so these
  * tests are all about the gate — which threads get the option and which
- * don't. Whether a macro's note really does arrive with no author is a fact
- * about the paid Workflows module, which isn't installed in this repo, so
- * that one assumption is documented in the provider and needs confirming on
- * the demo server rather than here.
+ * don't.
  *
- * No DB rows are needed: the listener only ever reads a Thread's type, author
- * and body, so in-memory models are enough and nothing has to be cleaned up.
+ * A macro authors its note as a "robot" user rather than as a person, which
+ * is confirmed against the demo server: it has a robot user literally named
+ * "Workflow", and 23 of its 30 notes are authored by robots. The Workflows
+ * module isn't installed in this repo, so these tests stand the equivalent
+ * up by hand.
+ *
+ * No DB rows are needed: the listener only ever reads a Thread's type, body
+ * and author, and the author relation can be set directly on the model, so
+ * in-memory models are enough and nothing has to be cleaned up.
  */
 class UseNoteAsReplyTest extends TestCase
 {
@@ -35,15 +40,29 @@ class UseNoteAsReplyTest extends TestCase
         (new \Modules\UseNoteAsReply\Providers\UseNoteAsReplyServiceProvider(app()))->boot();
     }
 
-    protected function makeThread($attributes = [])
+    /**
+     * A macro's note by default: authored by a robot user, the way the
+     * Workflows module's own "Workflow" user does it.
+     */
+    protected function makeThread($attributes = [], $author_type = User::TYPE_ROBOT)
     {
         $thread = new Thread();
         $thread->type = Thread::TYPE_NOTE;
-        $thread->created_by_user_id = null;
+        $thread->created_by_user_id = 5;
         $thread->body = '<div>Your request has been noted and referred to the Advisory Board.</div>';
 
         foreach ($attributes as $key => $value) {
             $thread->{$key} = $value;
+        }
+
+        if ($author_type !== null && $thread->created_by_user_id) {
+            $author = new User();
+            $author->id = $thread->created_by_user_id;
+            $author->type = $author_type;
+
+            // Set directly so the gate doesn't try to load the relation from
+            // the database, which these tests deliberately don't touch.
+            $thread->setRelation('created_by_user_cached', $author);
         }
 
         return $thread;
@@ -66,13 +85,26 @@ class UseNoteAsReplyTest extends TestCase
     }
 
     /**
-     * A note an agent typed themselves records its author, and they already
-     * have the text in front of them. Only the authorless (macro) ones get
-     * the option.
+     * A note an agent typed is authored by that agent, and they already have
+     * the text in front of them. Only the robot-authored (macro) ones get the
+     * option.
      */
     public function test_option_hidden_on_a_note_written_by_an_agent()
     {
-        $html = $this->renderThreadMenu($this->makeThread(['created_by_user_id' => 7]));
+        $html = $this->renderThreadMenu($this->makeThread([], User::TYPE_USER));
+
+        $this->assertSame('', $html);
+    }
+
+    /**
+     * Guards the mistake this gate was originally built on: authorless notes
+     * don't exist in practice (customer messages are the authorless threads),
+     * so treating "no author" as the macro signal meant the option never
+     * appeared at all.
+     */
+    public function test_option_hidden_on_a_note_with_no_author()
+    {
+        $html = $this->renderThreadMenu($this->makeThread(['created_by_user_id' => null]));
 
         $this->assertSame('', $html);
     }

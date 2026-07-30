@@ -36,23 +36,31 @@ Everything needed was already in core:
 
 There is no core column recording "a macro made this", and Workflows is a paid
 module living outside this repo, so keying off its internals would break the
-moment it updates. What *is* reliable in core: a note an agent typed always
-records its author, and a macro's note has none. That is precisely why such a
-note renders its author as "Macro" via the `thread.action_person` filter rather
-than a user's name (`Thread::getActionPerson()` returns an empty string when
-there is no `created_by_user`).
+moment it updates. What core does give us is *who authored the note*: a macro
+posts its own as a **robot** user (`User::TYPE_ROBOT`, whose comment in core
+reads "Workflows, teams, etc."), where an agent's note records the agent.
 
-So the gate is **a note, with no author, that has some text in it**, which
+So the gate is **a note, authored by a robot, that has some text in it**, which
 needs nothing from the paid module.
 
-**Assumption still to confirm on the demo server**: that a macro's note really
-does arrive with `created_by_user_id` empty. It follows from how the author is
-rendered, but it hasn't been checked against real data — the grep that would
-have confirmed it failed on the server twice. If it turns out macros do record
-an author, the gate in `isMacroNote()` is the one place to change.
+Confirmed against the demo server rather than assumed:
 
-If another module ever posts authorless notes of its own, they would also get
-the option. That is harmless: it only copies text into the agent's own reply
+* There is a robot user literally named "Workflow", which is where the name
+  shown on those notes comes from. The Workflows module doesn't hook
+  `thread.action_person` at all (grepped, no matches) — it simply authors the
+  thread as that user.
+* Of 30 notes, 23 are authored by robots and 7 by real agents, so both sides of
+  the gate exist in real data.
+
+**An earlier version of this gate was wrong** and worth recording, since the
+reasoning was plausible: it keyed on a note having *no* author, inferred from
+`Thread::getActionPerson()` returning an empty string when there is no
+`created_by_user`. In reality no note is authorless (customer messages are the
+authorless threads), so the option would never have appeared at all. There is a
+regression test for that specific case.
+
+Teams are also robot users, so a note ever authored by a team would qualify
+too. That is harmless: the option only copies text into the agent's own reply
 box.
 
 ## Not overwriting an agent's own writing
@@ -98,9 +106,13 @@ here that ship a `Public/js` folder.
 
 ## Tests
 
-`tests/Feature/UseNoteAsReplyTest.php` — the option appears on an authorless
-note; is hidden on a note an agent wrote, on replies and customer messages, on
-line items, and on notes with no text (including markup-only bodies); the
-rendered element carries its confirmation wording; and the module's JS is
-registered. Each gate was mutation-tested: the condition removed, the test
-confirmed to fail, then restored.
+`tests/Feature/UseNoteAsReplyTest.php` — the option appears on a robot-authored
+note; is hidden on a note an agent wrote, on a note with no author at all (the
+regression guard for the wrong gate described above), on replies and customer
+messages, on line items, and on notes with no text (including markup-only
+bodies); the rendered element carries its confirmation wording; and the
+module's JS is registered. Each gate was mutation-tested: the condition
+removed, the test confirmed to fail, then restored.
+
+Still untested: `Public/js/module.js`. These tests cover which notes offer the
+option, not what happens when one is clicked.

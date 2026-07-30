@@ -3,6 +3,7 @@
 namespace Modules\UseNoteAsReply\Providers;
 
 use App\Thread;
+use App\User;
 use Illuminate\Support\ServiceProvider;
 
 /**
@@ -86,16 +87,17 @@ class UseNoteAsReplyServiceProvider extends ServiceProvider
      *
      * There is no core column saying "a macro made this", and the Workflows
      * module is paid and lives outside this repo, so keying off its internals
-     * would break on any update of it. What is reliable in core: a note an
-     * agent wrote always records its author, and a macro's note has none —
-     * which is exactly why such a note renders its author as "Macro" through
-     * the `thread.action_person` filter instead of a user's name (see
-     * Thread::getActionPerson(), which returns an empty string when there is
-     * no created_by_user).
+     * would break on any update of it. What core does give us is who authored
+     * the note: macros post theirs as a "robot" user (User::TYPE_ROBOT, whose
+     * own comment in core reads "Workflows, teams, etc."), where an agent's
+     * note records the agent. Confirmed against the demo server: there is a
+     * robot user literally named "Workflow", which is where the name shown on
+     * those notes comes from — the Workflows module doesn't hook
+     * `thread.action_person` at all, it just authors the thread as that user.
      *
-     * So "note with no author" is the signal, and it needs nothing from the
-     * paid module. If another module ever posts authorless notes of its own
-     * they would also qualify, which is harmless: the item only copies text
+     * So "note authored by a robot" is the signal, and it needs nothing from
+     * the paid module. Teams are also robot users, so a note ever authored by
+     * a team would qualify too. That is harmless: the option only copies text
      * into the agent's own reply box.
      */
     protected function isMacroNote($thread)
@@ -104,7 +106,13 @@ class UseNoteAsReplyServiceProvider extends ServiceProvider
             return false;
         }
 
-        if (!$thread->isNote() || !empty($thread->created_by_user_id)) {
+        if (!$thread->isNote() || empty($thread->created_by_user_id)) {
+            return false;
+        }
+
+        $author = $thread->created_by_user_cached;
+
+        if (empty($author) || $author->type != User::TYPE_ROBOT) {
             return false;
         }
 
