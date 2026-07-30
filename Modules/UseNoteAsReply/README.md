@@ -80,11 +80,17 @@ handler in `main.js`). This module respects that rather than working around it:
   the editor's *text*, not its HTML, since Summernote leaves wrapper markup
   around an otherwise empty editor.
 
-**Known caveat, inherited from core**: if the editor is open as a *note* with a
-draft already saved, confirming the switch to reply can leave that draft note
-behind. This is the exact situation core avoids by refusing the switch at all;
-the confirmation is what stands in for that. Worth watching once agents use it,
-and the fallback would be to refuse the switch while a note draft is open.
+**Known caveat, inherited from core, and observed rather than theorised**: core
+autosaves whatever is in the editor as a draft thread. So if an agent has
+already typed something, autosave has stored it, and they then confirm the
+replacement, their text stays behind as a `[Draft]` on the conversation (and
+counts towards the Drafts folder). Their work isn't lost, which is arguably the
+better failure, but the conversation does pick up a draft they need to discard.
+
+This was seen during the browser verification, not inferred. It only happens on
+the replace path, which requires the agent to have typed something and then
+confirmed. The alternative would be to refuse the action while a draft exists
+and ask them to discard it first, which seemed more annoying than the draft.
 
 ## Translations
 
@@ -104,6 +110,17 @@ renders but clicking it does nothing, that symlink is the first thing to check
 — `php artisan freescout:clear-cache` recreates it. Same for the other modules
 here that ship a `Public/js` folder.
 
+Two things worth knowing, both hit while verifying this locally:
+
+* The list of installed modules is cached in Laravel's cache for 60 minutes
+  (`config/modules.php`). Activating through Manage → Modules clears it; flipping
+  the `modules` table directly does not, so the module stays invisible until that
+  cache expires. `Cache::forget('laravel-modules')` is the shortcut.
+* Module JS is concatenated into core's minified `/js/builds/…` bundle rather
+  than served as its own `<script src>`. That happens automatically once the
+  module registers, so there's no build step to run, but it does mean you won't
+  find a `usenoteasreply` script tag in the page source.
+
 ## Tests
 
 `tests/Feature/UseNoteAsReplyTest.php` — the option appears on a robot-authored
@@ -114,5 +131,17 @@ bodies); the rendered element carries its confirmation wording; and the
 module's JS is registered. Each gate was mutation-tested: the condition
 removed, the test confirmed to fail, then restored.
 
-Still untested: `Public/js/module.js`. These tests cover which notes offer the
-option, not what happens when one is clicked.
+`Public/js/module.js` has no automated test, but it was driven in a real browser
+(Playwright against the local install, with a robot-authored note and an
+agent-written one on the same conversation) and all four paths were exercised:
+
+* editor closed → opens as a reply, in reply mode, with the note's text in the
+  editor **and** in the hidden `body` field the form actually submits
+* editor already open with the agent's own text → prompts, and cancelling leaves
+  their text untouched
+* same, accepting → replaces it with the note's text
+* editor open as a *note* → switches to reply mode and fills it in
+
+Also checked: the option renders on the robot-authored note and not on the
+agent's, the JS really is present in the served bundle, and the page logs no JS
+errors throughout.
