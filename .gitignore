@@ -38,6 +38,7 @@ Thumbs.db
 !/Modules/AuditLog
 !/Modules/SendAndSetStatus
 !/Modules/AgentFolders
+!/Modules/UseNoteAsReply
 /public/modules
 /public/docs
 /public/.dh-diag
