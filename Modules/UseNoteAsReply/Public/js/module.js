@@ -4,6 +4,14 @@
 	// Would opening the reply editor over the top of this lose the agent's
 	// own writing? Summernote leaves wrapper markup around an otherwise empty
 	// editor, so this compares on text rather than HTML.
+	//
+	// DOMParser rather than jQuery's .html(): it yields an inert document that
+	// neither runs scripts nor fetches resources. jQuery would build real
+	// elements via innerHTML, and while a <script> in a detached node is not
+	// evaluated (jQuery guards that on document containment), an
+	// "<img src=x onerror=…>" fires regardless of being detached, since image
+	// loading follows the src attribute. Not worth that risk just to measure
+	// the length of something.
 	function replyHasContent()
 	{
 		var body = $('#body').summernote('code');
@@ -12,7 +20,9 @@
 			return false;
 		}
 
-		return $.trim($('<div>').html(body).text()).length > 0;
+		var parsed = new DOMParser().parseFromString(body, 'text/html');
+
+		return $.trim(parsed.body.textContent || '').length > 0;
 	}
 
 	// Handles the item rendered by UseNoteAsReplyServiceProvider's thread.menu
