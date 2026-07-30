@@ -7,10 +7,7 @@ use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Name given to the robot user that authors macro-generated threads.
-     * See relabelMacrosRobotUser().
-     */
+    // Author name shown on macro-generated threads. See relabelMacrosRobotUser().
     const MACROS_ROBOT_USER_NAME = 'Macro';
 
     /**
@@ -64,28 +61,11 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
-     * threls fork patch (ARMS-49): make the robot user that authors
-     * macro-generated threads read "Macro" rather than "Workflow".
-     *
-     * That word reaches the screen as *data*, not as a translatable string, so
-     * the resources/lang/en.json rename cannot touch it: the Workflows module
-     * (paid, not tracked in this repo) creates a User::TYPE_ROBOT account named
-     * from config('workflows.user_full_name'), and rewrites that account's name
-     * to match the config on every run. It surfaces as the thread author on
-     * every note a macro posts, and inside core's own
-     * ":person forwarded this conversation" line.
-     *
-     * The module reads that config at runtime, so setting it here is enough —
-     * no file of the module's is touched, and the change survives updates of
-     * it. Order does not matter either: mergeConfigFrom() merges a module's own
-     * file *under* whatever is already set, so this wins whether the module
-     * registers before or after this provider boots.
-     *
-     * Deliberately unconditional, which means the module's own
-     * WORKFLOWS_USER_FULL_NAME env var no longer does anything. That is the
-     * point — an env var set on one environment and forgotten on the next is
-     * exactly how this label would regress at go-live. Change the constant
-     * above to relabel, not the environment.
+     * threls fork patch (ARMS-49): the Workflows module names its robot author
+     * account from this config and rewrites the account to match on every run,
+     * so renaming the user row instead would revert on the next macro. Set here
+     * rather than via its WORKFLOWS_USER_FULL_NAME env var, which this makes
+     * inert, so the label can't regress on an environment that misses it.
      *
      * @return void
      */

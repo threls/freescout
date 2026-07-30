@@ -6,19 +6,10 @@ use App\Providers\AppServiceProvider;
 use Tests\TestCase;
 
 /**
- * ARMS-49: the robot user that authors macro-generated threads must read
- * "Macro", not "Workflow".
- *
- * Unlike the rest of that rename, this word is not a translatable string, so
- * resources/lang/en.json cannot reach it (see WorkflowsToMacrosLabelTest for
- * the part that is). The Workflows module names its robot account from
- * config('workflows.user_full_name') and rewrites the account to match on every
- * run, which is why editing the user row by hand does not hold. Overridden in
- * AppServiceProvider instead.
- *
- * Workflows is paid and not installed in this repo, so what is verified here is
- * the config value the module would read, plus the ordering assumption the
- * approach rests on.
+ * ARMS-49: macro-generated threads must show "Macro" as their author. That name
+ * is an account's, not a translatable string, so en.json can't reach it (see
+ * WorkflowsToMacrosLabelTest for the part it does). Workflows isn't installed
+ * here, so these cover the config value it would read.
  */
 class MacrosRobotUserNameTest extends TestCase
 {
@@ -28,31 +19,23 @@ class MacrosRobotUserNameTest extends TestCase
     }
 
     /**
-     * The load-bearing assumption: this works regardless of whether the module
-     * registers before or after AppServiceProvider boots, because
-     * mergeConfigFrom() merges a module's own config file *under* values that
-     * are already set. Emulated here rather than trusted, since the whole
-     * approach falls over if it is the other way round.
+     * The approach depends on the module registering its own config file not
+     * clobbering ours, whichever order they boot in. Emulated rather than
+     * trusted, since it falls over the other way round.
      */
     public function test_the_module_merging_its_own_config_later_does_not_win()
     {
-        // What Modules/Workflows/Config/config.php ships.
         $module_defaults = ['user_full_name' => 'Workflow'];
 
-        // Cast because the key does not exist at all when Workflows is absent,
-        // which is the case in this repo.
+        // Cast: the key is absent entirely when Workflows isn't installed.
         $already_set = (array) config('workflows', []);
 
-        // Exactly what ServiceProvider::mergeConfigFrom() does.
+        // What ServiceProvider::mergeConfigFrom() does.
         config(['workflows' => array_merge($module_defaults, $already_set)]);
 
         $this->assertSame('Macro', config('workflows.user_full_name'));
     }
 
-    /**
-     * Relabelling should mean editing one constant, not hunting through
-     * environment files on each server.
-     */
     public function test_the_name_comes_from_the_provider_constant()
     {
         $this->assertSame(
