@@ -36,6 +36,20 @@ class MacrosRobotUserNameTest extends TestCase
         $this->assertSame('Macro', config('workflows.user_full_name'));
     }
 
+    /**
+     * Has to happen during registration, not boot: a provider that read the
+     * config while booting could otherwise be booted first and see the
+     * module's default.
+     */
+    public function test_the_override_happens_during_registration()
+    {
+        \Config::set('workflows.user_full_name', 'Workflow');
+
+        (new AppServiceProvider($this->app))->register();
+
+        $this->assertSame('Macro', config('workflows.user_full_name'));
+    }
+
     public function test_the_name_comes_from_the_provider_constant()
     {
         $this->assertSame(

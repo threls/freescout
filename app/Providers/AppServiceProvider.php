@@ -21,9 +21,6 @@ class AppServiceProvider extends ServiceProvider
         // "SQLSTATE[42000]: Syntax error or access violation: 1071 Specified key was too long; max key length is 767 bytes"
         Schema::defaultStringLength(191);
 
-        // threls fork patch: see the method.
-        $this->relabelMacrosRobotUser();
-
         // Models observers
         \App\Mailbox::observe(\App\Observers\MailboxObserver::class);
         // Eloquent events for this table are not called automatically, so need to be called manually.
@@ -67,6 +64,9 @@ class AppServiceProvider extends ServiceProvider
      * rather than via its WORKFLOWS_USER_FULL_NAME env var, which this makes
      * inert, so the label can't regress on an environment that misses it.
      *
+     * Called from register(), not boot(), so the value is in place before any
+     * provider boots.
+     *
      * @return void
      */
     protected function relabelMacrosRobotUser()
@@ -81,6 +81,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        // threls fork patch: see the method.
+        $this->relabelMacrosRobotUser();
+
         // Forse HTTPS if using CloudFlare "Flexible SSL"
         // https://support.cloudflare.com/hc/en-us/articles/200170416-What-do-the-SSL-options-mean-
         if (\Helper::isHttps()) {
