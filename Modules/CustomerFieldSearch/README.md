@@ -30,16 +30,30 @@ search to one specific field instead of matching any of them — see
   `search.filters_list`, `search.filters_list_customers`, and
   `search.display_filters` (the last four already present upstream).
 
-## Why prefix match, not substring
+## Substring match, and why it's affordable
 
-Per ARMS-22's explicit requirement, matching is `value LIKE 'q%'`
-(prefix-anchored), never `LIKE '%q%'`. A leading wildcard can't use a
-B-tree index and forces a full table scan; a search hitting every
-`customer_customer_field` row on every keystroke doesn't hold up at the
-10,000 → 100,000 customer scale ARMS-22 targets. This module's own migration
-adds an index on `customer_customer_field.value` (a MySQL prefix-length
-index, or a Postgres `text_pattern_ops` index) specifically to make the
-prefix match sargable.
+Matching is `value LIKE '%q%'`. This was originally the opposite: ARMS-22
+specified prefix-anchored (`'q%'`) matching for performance, and this section
+used to explain why. The 29 Jul review reversed it, because prefix matching
+made real data unfindable — ID card numbers are stored zero-padded, agents
+type them without the leading zero, so searching `71787M` returned nothing
+against a stored `071787M`.
+
+The original performance concern doesn't apply to this query, which is worth
+understanding before anyone "fixes" it back. A leading wildcard can't seek on
+an index, so the worry was every search scanning the whole
+`customer_customer_field` table. But the match is a **correlated** subquery
+pinned on `customer_id`, and that column is the leading half of Crm's own
+`customer_customer_field_customer_id_customer_field_id_unique` index
+(confirmed on the live database). So each candidate customer's own handful of
+field rows is seeked to, and the term is compared against only those values.
+The scan the prefix anchoring was protecting against never happens.
+
+**The `value` index this module's migration adds is now redundant** for this
+query. It's deliberately left in place rather than dropped: it's a small
+prefix-length index, it costs almost nothing, and dropping it would mean
+another schema change against a table the Crm module owns for no functional
+gain. The migration's `down()` still exists if it's ever worth removing.
 
 The user's own search term is also escaped for LIKE metacharacters (`%`,
 `_`, `\`) before being used as a pattern, so typing e.g. an account number
@@ -147,8 +161,10 @@ ever genuinely unavailable.
 ## Tests
 
 `tests/Feature/CustomerFieldSearchTest.php` covers: mailbox-scoping is
-preserved for all three search surfaces, matching is prefix-only (a value
-containing but not starting with the term is not matched), `ajaxSearch()`
+preserved for all three search surfaces, matching is substring (a value
+containing the term is matched, one that doesn't contain it isn't), a
+zero-padded ID card is found when typed without its leading zero (the
+original ARMS-22 report, using the real values from it), `ajaxSearch()`
 doesn't duplicate rows for a customer with multiple matching field values,
 `search_by` modes other than `all` aren't broadened, a search term
 containing `%`/`_` doesn't behave as a wildcard, the "Custom Field" filter

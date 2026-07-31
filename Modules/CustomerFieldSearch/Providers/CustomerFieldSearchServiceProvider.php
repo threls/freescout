@@ -107,17 +107,22 @@ class CustomerFieldSearchServiceProvider extends ServiceProvider
     }
 
     /**
-     * ORs in "does this customer have a custom field value starting with
-     * $q" via a correlated whereExists — never a join, which would multiply
+     * ORs in "does this customer have a custom field value containing $q"
+     * via a correlated whereExists — never a join, which would multiply
      * result rows per matching field value on every one of these call sites.
      *
-     * Prefix-anchored ($q% not %q%) so the index added by this module's
-     * migration can actually be used at 100k+ row scale.
+     * Matching is substring (%q%), not prefix. ARMS-22 originally specified
+     * prefix-only for performance, but that made stored values with a leading
+     * zero unfindable: an agent searching an ID card as 71787M got nothing
+     * back when the stored value was 071787M. Substring is safe here because
+     * the subquery is correlated on customer_id, which is the leading column
+     * of Crm's own unique index on (customer_id, customer_field_id) — so each
+     * customer's own handful of field rows is seeked to and only those values
+     * are compared, rather than the term being matched across the whole table.
      *
-     * When the agent has picked one field from the new "Custom Field"
-     * dropdown, the match narrows to that field only; otherwise (the
-     * default, unchanged behaviour) it matches any field, same as before
-     * this filter existed.
+     * When the agent has picked one field from the "Custom Field" dropdown,
+     * the match narrows to that field only; otherwise (the default) it matches
+     * any field.
      */
     protected function addCustomFieldMatch($query, $q, $customerIdColumn, $like_op, $fieldId = null)
     {
@@ -137,7 +142,7 @@ class CustomerFieldSearchServiceProvider extends ServiceProvider
             $sub->select(DB::raw(1))
                 ->from(self::TABLE)
                 ->whereColumn(self::TABLE.'.customer_id', $customerIdColumn)
-                ->where(self::TABLE.'.value', $like_op, $value.'%');
+                ->where(self::TABLE.'.value', $like_op, '%'.$value.'%');
 
             if ($fieldId) {
                 $sub->where(self::TABLE.'.customer_field_id', $fieldId);

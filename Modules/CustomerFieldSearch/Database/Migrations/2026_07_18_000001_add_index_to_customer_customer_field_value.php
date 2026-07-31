@@ -4,6 +4,13 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Added when matching was prefix-anchored, which this index made sargable.
+ * Matching is now substring (see the module README), so this no longer backs
+ * that query — the correlated subquery seeks on Crm's own customer_id index
+ * instead. Kept because it is small and harmless; down() is here if it ever
+ * becomes worth dropping.
+ */
 class AddIndexToCustomerCustomerFieldValue extends Migration
 {
     const INDEX_NAME = 'customer_customer_field_value_idx';
