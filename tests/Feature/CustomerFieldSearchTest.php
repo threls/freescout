@@ -237,11 +237,11 @@ class CustomerFieldSearchTest extends TestCase
     }
 
     /**
-     * ARMS-22's explicit requirement: prefix match only. A value that
-     * *contains* the term but doesn't *start* with it must not match — this
-     * is what makes the index this module's migration adds actually usable.
+     * Matching is substring, not prefix. This was the reverse until ARMS-22's
+     * 29 Jul review: prefix-only was the original requirement, for performance,
+     * and it made a value that merely contains the term unfindable.
      */
-    public function test_customers_tab_does_not_substring_match()
+    public function test_customers_tab_substring_matches()
     {
         $customer = $this->makeCustomer();
         $this->setCustomerFieldValue($customer->id, 1, 'PREFIX-99887766');
@@ -251,11 +251,34 @@ class CustomerFieldSearchTest extends TestCase
 
         $results = $controller->searchCustomers($this->searchCustomersRequest('99887766'), $user);
         $ids = collect($results->items())->pluck('id')->all();
-        $this->assertNotContains($customer->id, $ids, 'value containing but not starting with the term must not match');
+        $this->assertContains($customer->id, $ids, 'value containing the term must match');
 
         $results = $controller->searchCustomers($this->searchCustomersRequest('PREFIX-998'), $user);
         $ids = collect($results->items())->pluck('id')->all();
-        $this->assertContains($customer->id, $ids, 'value actually starting with the term must match');
+        $this->assertContains($customer->id, $ids, 'value starting with the term must still match');
+
+        $results = $controller->searchCustomers($this->searchCustomersRequest('NOTHERE'), $user);
+        $ids = collect($results->items())->pluck('id')->all();
+        $this->assertNotContains($customer->id, $ids, 'a term the value does not contain must not match');
+    }
+
+    /**
+     * The actual case from ARMS-22: ID card numbers are stored zero-padded but
+     * agents type them without the leading zero, so an exact or prefix match
+     * found nothing. Uses the real values from the report.
+     */
+    public function test_zero_padded_id_card_is_found_without_the_leading_zero()
+    {
+        $customer = $this->makeCustomer();
+        $this->setCustomerFieldValue($customer->id, 2, '071787M');
+
+        $user = $this->makeUser();
+        $controller = new \App\Http\Controllers\ConversationsController();
+
+        $results = $controller->searchCustomers($this->searchCustomersRequest('71787M'), $user);
+        $ids = collect($results->items())->pluck('id')->all();
+
+        $this->assertContains($customer->id, $ids);
     }
 
     /**
