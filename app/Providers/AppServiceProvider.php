@@ -7,6 +7,9 @@ use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
+    // Author name shown on macro-generated threads. See relabelMacrosRobotUser().
+    const MACROS_ROBOT_USER_NAME = 'Macro';
+
     /**
      * Bootstrap any application services.
      *
@@ -55,12 +58,32 @@ class AppServiceProvider extends ServiceProvider
     }
 
     /**
+     * threls fork patch (ARMS-49): the Workflows module names its robot author
+     * account from this config and rewrites the account to match on every run,
+     * so renaming the user row instead would revert on the next macro. Set here
+     * rather than via its WORKFLOWS_USER_FULL_NAME env var, which this makes
+     * inert, so the label can't regress on an environment that misses it.
+     *
+     * Called from register(), not boot(), so the value is in place before any
+     * provider boots.
+     *
+     * @return void
+     */
+    protected function relabelMacrosRobotUser()
+    {
+        \Config::set('workflows.user_full_name', self::MACROS_ROBOT_USER_NAME);
+    }
+
+    /**
      * Register any application services.
      *
      * @return void
      */
     public function register()
     {
+        // threls fork patch: see the method.
+        $this->relabelMacrosRobotUser();
+
         // Forse HTTPS if using CloudFlare "Flexible SSL"
         // https://support.cloudflare.com/hc/en-us/articles/200170416-What-do-the-SSL-options-mean-
         if (\Helper::isHttps()) {
