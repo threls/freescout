@@ -49,11 +49,12 @@ pinned on `customer_id`, and that column is the leading half of Crm's own
 field rows is seeked to, and the term is compared against only those values.
 The scan the prefix anchoring was protecting against never happens.
 
-**The `value` index this module's migration adds is now redundant** for this
-query. It's deliberately left in place rather than dropped: it's a small
-prefix-length index, it costs almost nothing, and dropping it would mean
-another schema change against a table the Crm module owns for no functional
-gain. The migration's `down()` still exists if it's ever worth removing.
+**The `value` index this module's migration adds no longer serves this query** —
+a leading wildcard can't seek. It should not be dropped as dead weight, though,
+because it isn't dead: Crm's own `#field:value` filters compare `value` for
+exact equality on every field type except Multi Line and Multiselect, and an
+equality predicate is exactly what the index serves. It arguably earns its place
+better now than it did when we added it for our own prefix match.
 
 The user's own search term is also escaped for LIKE metacharacters (`%`,
 `_`, `\`) before being used as a pattern, so typing e.g. an account number

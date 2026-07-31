@@ -5,11 +5,16 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Added when matching was prefix-anchored, which this index made sargable.
- * Matching is now substring (see the module README), so this no longer backs
- * that query — the correlated subquery seeks on Crm's own customer_id index
- * instead. Kept because it is small and harmless; down() is here if it ever
- * becomes worth dropping.
+ * Added when this module's own match was prefix-anchored, which this index made
+ * sargable. That match is now substring (see the module README), so it no
+ * longer serves this query — which seeks on Crm's own customer_id index
+ * instead.
+ *
+ * The index is not idle, though, so don't drop it as dead weight: Crm's own
+ * `#field:value` filters compare `value` for exact equality on every field type
+ * except Multi Line and Multiselect (see the apply_filters listeners in
+ * CrmServiceProvider), and an equality predicate is exactly what this index
+ * serves.
  */
 class AddIndexToCustomerCustomerFieldValue extends Migration
 {
