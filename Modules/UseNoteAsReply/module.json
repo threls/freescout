@@ -2,6 +2,7 @@
     "name": "Use Note As Reply",
     "alias": "usenoteasreply",
     "description": "Adds a \"Use as Reply\" option to internal notes written by a macro, which opens the reply editor and drops the note's text into it, so agents don't have to copy and paste it by hand.",
+    "img": "/modules/usenoteasreply/img/icon.svg",
     "version": "1.0.0",
     "author": "Threls",
     "keywords": ["notes", "reply", "macros", "workflows"],
