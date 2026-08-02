@@ -128,6 +128,25 @@ class CustomerPhoneSearchTest extends TestCase
         return collect($controller->searchCustomers($request, $user)->items())->pluck('id')->all();
     }
 
+    /**
+     * Fires the hook against a query scoped to the given customers, and
+     * returns which of them the module's condition alone matched.
+     *
+     * Tests about the shape of the LIKE pattern use this rather than a
+     * controller, because the real search pages paginate: a short term like
+     * "4" matches enough of the surrounding test data through name, address
+     * and email that a fixture can fall off page one, and the assertion then
+     * passes or fails on pagination instead of on the pattern.
+     */
+    protected function matchedByPhoneCondition($q, array $customerIds)
+    {
+        return Customer::whereIn('id', $customerIds)
+            ->where(function ($query) use ($q) {
+                \Eventy::filter('search.customers.text_match', $query, $q, 'like', []);
+            })
+            ->pluck('id')->all();
+    }
+
     protected function ajaxSearch($q, $searchBy = 'all', $extra = [])
     {
         $controller = new \App\Http\Controllers\CustomersController();
@@ -430,10 +449,43 @@ class CustomerPhoneSearchTest extends TestCase
     public function test_a_term_without_digits_does_not_match_every_phone()
     {
         $customer = $this->makeCustomer(['79001122']);
-        $user = $this->makeUser();
 
-        $ids = $this->searchCustomers('zzzzzznotacustomer', $user);
+        $ids = $this->matchedByPhoneCondition('zzzzzznotacustomer', [$customer->id]);
 
         $this->assertNotContains($customer->id, $ids);
+    }
+
+    /**
+     * Anchoring the pattern on the "n" key stops a short search matching the
+     * JSON's own structure. formatPhones() writes value, then type, then n, so
+     * a single phone's "type":4 sits before the anchor and is out of reach.
+     */
+    public function test_a_short_search_does_not_match_the_phone_type()
+    {
+        // Mobile is type 4, and the number itself contains no 4.
+        $customer = $this->makeCustomer(['79111222']);
+
+        $this->assertNotContains($customer->id, $this->matchedByPhoneCondition('4', [$customer->id]));
+        $this->assertContains($customer->id, $this->matchedByPhoneCondition('79111222', [$customer->id]));
+    }
+
+    /**
+     * The limit of that anchor, pinned so it isn't mistaken for solved. Only
+     * the first phone's type is out of reach: the pattern allows anything
+     * between the first "n" key and the digits, so on a customer with several
+     * phones a later entry's "type" is still reachable. Fixing it properly
+     * needs a regex to say "digits only after the anchor", which is not
+     * portable across MySQL and PostgreSQL in the way LIKE is.
+     */
+    public function test_a_short_search_can_still_match_a_later_phones_type()
+    {
+        // Second phone is mobile (type 4); neither number contains a 4.
+        $customer = $this->makeCustomer(['79111333', '79111555']);
+
+        $this->assertContains(
+            $customer->id,
+            $this->matchedByPhoneCondition('4', [$customer->id]),
+            'documents a known limit, see docblock'
+        );
     }
 }
