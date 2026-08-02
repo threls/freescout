@@ -89,10 +89,18 @@ class CustomerPhoneSearchServiceProvider extends ServiceProvider
             return $query;
         }
 
+        // Anchoring on the "n" key keeps a short search off the JSON's own
+        // structure: without it, searching "4" matches "type":4 and so returns
+        // every customer with a mobile number. It only half works, and the
+        // README says why, but it costs nothing and loses no real match: a
+        // phone's digits-only "n" is by definition a superset of any digit run
+        // in the "value" it was built from, so nothing findable before the
+        // anchor is unfindable after it.
+        //
         // No LIKE-metacharacter escaping needed, unlike CustomerFieldSearch:
         // phoneToNumeric() has already stripped everything that isn't a digit.
         // Nor 'ilike' on PostgreSQL, digits having no case to fold.
-        $query->orWhere('customers.phones', 'like', '%'.$digits.'%');
+        $query->orWhere('customers.phones', 'like', '%"n":"%'.$digits.'%');
 
         return $query;
     }
