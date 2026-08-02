@@ -12,14 +12,11 @@ use Illuminate\Http\Request;
 use Tests\TestCase;
 
 /**
- * Covers the phone half of ARMS-22: finding a customer by their mobile
- * number from Search > Customers, Search > Conversations, and the shared
- * ajaxSearch lookup behind the ticket sidebar, Change Customer, Merge,
- * Cc/Bcc, New Ticket and advanced search's Customer filter.
+ * Covers the phone half of ARMS-22 across all three search surfaces.
  *
- * Every customer here gets an explicit phone number rather than the factory's
- * random one, so a test can't pass or fail on a faker number happening to
- * contain (or not contain) the digits being searched for.
+ * Every customer gets an explicit phone number rather than the factory's
+ * random one, so no test can pass or fail on a faker number happening to
+ * contain the digits being searched for.
  */
 class CustomerPhoneSearchTest extends TestCase
 {
@@ -82,10 +79,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * $phones are stored exactly as an admin would have typed them, through
-     * Customer::formatPhones() — the same path the customer profile form
-     * uses — so these fixtures carry the real 'value'/'type'/'n' shape rather
-     * than an idealised one.
+     * Stored through formatPhones(), the same path the profile form uses, so
+     * fixtures carry the real value/type/n shape rather than an idealised one.
      */
     protected function makeCustomer($phones = ['70000000'])
     {
@@ -113,9 +108,8 @@ class CustomerPhoneSearchTest extends TestCase
         $this->conversationIds[] = $conversation->id;
 
         // Conversation::search() inner-joins threads, so a conversation with
-        // no thread row is never returned whatever else matches. The content
-        // deliberately doesn't contain any of the digits searched for below,
-        // so a match can only have come from the phone condition.
+        // no thread row is never returned. The body deliberately contains none
+        // of the digits searched for, so a match can only be the phone match.
         factory(Thread::class)->create([
             'conversation_id' => $conversation->id,
             'customer_id'     => $customerId,
@@ -141,9 +135,8 @@ class CustomerPhoneSearchTest extends TestCase
             'q'         => $q,
             'search_by' => $searchBy,
             'use_id'    => 1,
-            // These fixtures have no email address — without this,
-            // ajaxSearch's inner join to emails drops them before any phone
-            // match gets a say.
+            // Fixtures have no email, and without this ajaxSearch inner-joins
+            // emails and drops them before the phone match gets a say.
             'allow_non_emails' => 1,
         ], $extra));
 
@@ -153,10 +146,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * The gap ARMS-22 was actually reported against. ajaxSearch backs the
-     * ticket sidebar, Change Customer, Merge, Cc/Bcc, New Ticket and the
-     * advanced search "Customer" filter, and all of them send
-     * search_by = 'all' — the one mode where core never checked phones.
+     * The gap ARMS-22 was reported against: every widget sharing ajaxSearch
+     * sends search_by = 'all', the one mode core never checked phones in.
      */
     public function test_ajax_search_matches_phone_in_all_mode()
     {
@@ -168,9 +159,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * Core only fires this hook for search_by == 'all', so the deliberately
-     * narrower modes keep their old meaning. Name mode would otherwise start
-     * quietly returning phone matches too.
+     * Core fires the hook only for search_by == 'all', so the deliberately
+     * narrower modes keep their old meaning.
      */
     public function test_ajax_search_does_not_broaden_name_only_mode()
     {
@@ -182,10 +172,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * ajaxSearch applies its mailbox restriction as an AND'd join/whereIn
-     * added *after* the closure this module's hook fires inside. Proves the
-     * new OR condition can't leak past it and surface a customer from a
-     * mailbox the agent can't view.
+     * ajaxSearch AND's its mailbox restriction on after the closure this hook
+     * fires inside, so the new OR condition must not leak past it.
      */
     public function test_ajax_search_respects_mailbox_scoping()
     {
@@ -211,10 +199,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * A customer with two numbers that both match must come back once. Not a
-     * risk today — this matches a column on the customers row rather than
-     * joining anything — but it's the property that would silently break if
-     * this were ever reworked into a join against a phones table.
+     * Not a risk while this matches a column rather than joining, but it is
+     * what would silently break if it ever became a join.
      */
     public function test_ajax_search_does_not_duplicate_customer_with_two_matching_phones()
     {
@@ -230,26 +216,13 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * PRE-EXISTING BEHAVIOUR this widens the reach of, confirmed by running it
-     * rather than reasoned about. ajaxSearch adds exclude_id/exclude_email
-     * with where() (AND) while the name and phone conditions use orWhere() at
-     * the same nesting level, and AND binds tighter than OR, so the compiled
-     * clause is "(email match AND NOT excluded) OR name match OR phone match",
-     * not "(any match) AND NOT excluded". A customer passed as exclude_id can
-     * therefore still come back on a phone match.
-     *
-     * Where that shows: the Merge Customers picker (#merge_customer2_id in
-     * main.js) passes exclude_id to keep you from merging a customer into
-     * themselves, and sends search_by = 'all', so searching a phone number
-     * there can now offer the customer you're merging from.
-     *
-     * Not fixed here, deliberately, and the same call was made for the same
-     * reason when CustomerFieldSearch hit this: the excludes are equally
-     * bypassed by core's own name matching today, so this isn't a new class of
-     * bug, and correcting the precedence would change exclude behaviour for
-     * every ajaxSearch caller rather than just phone matches. Pinned by a test
-     * so that a future fix to the underlying precedence has to notice it
-     * instead of changing this silently.
+     * PRE-EXISTING BEHAVIOUR this widens the reach of, not a fix. ajaxSearch
+     * AND's exclude_id in while ORing the match conditions, and AND binds
+     * tighter, so any OR'd match escapes the exclusion. Visible in the Merge
+     * Customers picker, which passes exclude_id to stop you merging a customer
+     * into themselves. Left alone because core's name matching already escapes
+     * it the same way and the precedence fix would hit every ajaxSearch caller
+     * (see README); pinned here so that fix can't land unnoticed.
      */
     public function test_exclude_id_does_not_suppress_a_phone_match()
     {
@@ -263,19 +236,13 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * Both this module and CustomerFieldSearch listen on
-     * search.customers.text_match, and they register for different numbers of
-     * the four arguments core passes (2 here, 4 there). Eventy's Filter::fire()
-     * builds each listener's parameter list independently from the full
-     * argument array, so asking for fewer can't shorten what another listener
-     * receives — but the failure mode if that ever stopped being true is
-     * silent, and it would be CustomerFieldSearch's "Custom Field" dropdown
-     * that quietly stopped narrowing, not anything in this module.
-     *
-     * Uses a probe listener rather than booting the real sibling module, since
-     * the property under test is Eventy's argument handling and nothing about
-     * custom fields. That also keeps this test free of the CRM table the
-     * sibling's own suite has to create.
+     * This module registers for 2 of the 4 arguments search.customers.text_match
+     * passes; CustomerFieldSearch registers for all 4 on the same hook. Asking
+     * for fewer must not shorten what the other one gets, or that module's
+     * "Custom Field" dropdown quietly stops narrowing. A probe listener stands
+     * in for the sibling, since the property under test is Eventy's argument
+     * handling rather than anything about custom fields, and it keeps this test
+     * free of the CRM table.
      */
     public function test_registering_for_fewer_arguments_does_not_truncate_other_listeners()
     {
@@ -296,10 +263,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * Search > Customers already matched phones, but only a whole number:
-     * core's condition is '%"<digits>"%', quotes included, so it matches the
-     * stored digit string end to end or not at all. Typing the last six
-     * digits of a number you can see on screen found nothing.
+     * Core matched phones here as '%"<digits>"%', quotes included, so only a
+     * number typed out in full ever matched.
      */
     public function test_customers_tab_matches_a_partial_number()
     {
@@ -368,10 +333,7 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * Search > Conversations didn't match phone numbers at all. Reuses the
-     * existing search.conversations.or_where hook, so no core patch — but
-     * that hook sits inside a query whose customers table is left-joined
-     * conditionally, so it needs proving rather than assuming.
+     * Search > Conversations had no phone condition at all.
      */
     public function test_conversations_tab_matches_phone()
     {
@@ -413,13 +375,10 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * Adding the customers.phones condition must not stop Conversation::search
-     * left-joining the customers table. That join is added only if the
-     * compiled SQL doesn't already mention `customers`.`id` — so a phone
-     * condition written as a subquery correlated on customers.id (the shape
-     * the sibling CustomerFieldSearch module uses) would suppress it and take
-     * the native first_name/last_name matching down with it. Searching a
-     * customer's name proves that still works.
+     * Conversation::search left-joins customers only if the compiled SQL
+     * doesn't already mention `customers`.`id`, so a phone condition written
+     * as a subquery correlated on that column would suppress the join and take
+     * core's name matching with it. Proves the direct column match doesn't.
      */
     public function test_conversations_tab_still_matches_customer_name()
     {
@@ -436,9 +395,7 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * The point of reducing both sides to digits: however the number was
-     * typed into the profile, and however the agent types it into the search
-     * box, they meet in the middle.
+     * The point of reducing both sides to digits.
      */
     public function test_formatting_is_ignored_on_both_sides()
     {
@@ -451,13 +408,10 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * Documents the one asymmetry worth knowing about, so nobody reports it
-     * as a bug or "fixes" it without deciding to. The digits typed have to
-     * appear as one run inside the stored number, so an agent can leave the
-     * country code off a number stored with one — but can't add a country
-     * code to a number stored without one. Making that work would mean
-     * guessing the install's country to normalise against, which is a real
-     * decision to take with the client rather than a detail to infer here.
+     * The typed digits have to appear as one run inside the stored number, so
+     * a country code can be left off but not added. Normalising against an
+     * assumed country is the client's call; pinned so it isn't changed by
+     * accident or reported as a bug.
      */
     public function test_a_country_code_can_be_omitted_but_not_invented()
     {
@@ -470,9 +424,8 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
-     * A search term with no digits in it — an ordinary name or email — can't
-     * be a phone number, and must not turn into a LIKE '%%' matching every
-     * customer who has one.
+     * A term with no digits must not become LIKE '%%' and match every
+     * customer who has a phone.
      */
     public function test_a_term_without_digits_does_not_match_every_phone()
     {
