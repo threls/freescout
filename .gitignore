@@ -39,6 +39,7 @@ Thumbs.db
 !/Modules/SendAndSetStatus
 !/Modules/AgentFolders
 !/Modules/UseNoteAsReply
+!/Modules/CustomerPhoneSearch
 /public/modules
 /public/docs
 /public/.dh-diag
