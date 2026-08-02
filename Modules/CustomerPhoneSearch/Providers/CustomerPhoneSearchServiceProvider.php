@@ -92,11 +92,21 @@ class CustomerPhoneSearchServiceProvider extends ServiceProvider
      * Matching the whole column rather than picking the 'n' values out of the
      * JSON keeps this working on both MySQL and PostgreSQL, which core
      * supports and which have no portable JSON substring operator between
-     * them. The cost is that the digits can also match a 'type' (1-4, the
-     * work/home/mobile flag), so a single-digit search matches any customer
-     * with a phone at all. That is not worth guarding against: a one-digit
-     * search already matches most of the database through the name, subject
-     * and message-body conditions this one is OR'd alongside.
+     * them. The cost is that the digits can also match a 'type' (1-6, the
+     * work/home/other/mobile/fax/pager flag), so a single-digit search matches
+     * any customer with a phone at all.
+     *
+     * There's deliberately no minimum term length guarding that. Note the
+     * reason is NOT the one the sibling CustomerFieldSearch module gives for
+     * the same decision: there the match is a subquery pinned to one customer,
+     * so nothing scales with term length at all. That argument doesn't carry
+     * over here, because this really is an unindexable scan across the whole
+     * customers table. It's simply not a scan this module introduces — a
+     * one-character search already runs 'threads.body LIKE %x%' and half a
+     * dozen other unanchored LIKEs it's OR'd alongside, so a threshold here
+     * would buy nothing while making the box behave differently at two
+     * characters than at three. Core's own search_by == 'phone' mode has no
+     * threshold either.
      */
     protected function addPhoneMatch($query, $q)
     {

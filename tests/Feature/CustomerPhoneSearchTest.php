@@ -230,6 +230,72 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
+     * PRE-EXISTING BEHAVIOUR this widens the reach of, confirmed by running it
+     * rather than reasoned about. ajaxSearch adds exclude_id/exclude_email
+     * with where() (AND) while the name and phone conditions use orWhere() at
+     * the same nesting level, and AND binds tighter than OR, so the compiled
+     * clause is "(email match AND NOT excluded) OR name match OR phone match",
+     * not "(any match) AND NOT excluded". A customer passed as exclude_id can
+     * therefore still come back on a phone match.
+     *
+     * Where that shows: the Merge Customers picker (#merge_customer2_id in
+     * main.js) passes exclude_id to keep you from merging a customer into
+     * themselves, and sends search_by = 'all', so searching a phone number
+     * there can now offer the customer you're merging from.
+     *
+     * Not fixed here, deliberately, and the same call was made for the same
+     * reason when CustomerFieldSearch hit this: the excludes are equally
+     * bypassed by core's own name matching today, so this isn't a new class of
+     * bug, and correcting the precedence would change exclude behaviour for
+     * every ajaxSearch caller rather than just phone matches. Pinned by a test
+     * so that a future fix to the underlying precedence has to notice it
+     * instead of changing this silently.
+     */
+    public function test_exclude_id_does_not_suppress_a_phone_match()
+    {
+        $customer = $this->makeCustomer(['79556001']);
+
+        $this->actingAs($this->makeUser());
+
+        $ids = $this->ajaxSearch('79556001', 'all', ['exclude_id' => $customer->id]);
+
+        $this->assertContains($customer->id, $ids, 'documents current pre-existing behaviour, see docblock');
+    }
+
+    /**
+     * Both this module and CustomerFieldSearch listen on
+     * search.customers.text_match, and they register for different numbers of
+     * the four arguments core passes (2 here, 4 there). Eventy's Filter::fire()
+     * builds each listener's parameter list independently from the full
+     * argument array, so asking for fewer can't shorten what another listener
+     * receives — but the failure mode if that ever stopped being true is
+     * silent, and it would be CustomerFieldSearch's "Custom Field" dropdown
+     * that quietly stopped narrowing, not anything in this module.
+     *
+     * Uses a probe listener rather than booting the real sibling module, since
+     * the property under test is Eventy's argument handling and nothing about
+     * custom fields. That also keeps this test free of the CRM table the
+     * sibling's own suite has to create.
+     */
+    public function test_registering_for_fewer_arguments_does_not_truncate_other_listeners()
+    {
+        $received = null;
+
+        \Eventy::addFilter('search.customers.text_match', function ($query, $q, $like_op, $filters = []) use (&$received) {
+            $received = func_get_args();
+
+            return $query;
+        }, 30, 4);
+
+        $this->makeCustomer(['79773311']);
+        $this->searchCustomers('79773311', $this->makeUser());
+
+        $this->assertCount(4, $received, 'a 4-argument listener must still get all four');
+        $this->assertSame('79773311', $received[1]);
+        $this->assertIsArray($received[3], '$filters must survive alongside this module\'s 2-argument listener');
+    }
+
+    /**
      * Search > Customers already matched phones, but only a whole number:
      * core's condition is '%"<digits>"%', quotes included, so it matches the
      * stored digit string end to end or not at all. Typing the last six

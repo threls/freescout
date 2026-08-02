@@ -56,7 +56,7 @@ No LIKE-metacharacter escaping is needed here (unlike CustomerFieldSearch):
 `%`, `_` and `\` can't reach the pattern. `ilike` isn't needed on PostgreSQL
 either — digits have no case to fold.
 
-### Two things this trades away, on purpose
+### Three things this trades away, on purpose
 
 **A country code can be dropped but not added.** The digits typed have to
 appear as one run inside the stored number. So an agent can search `79123456`
@@ -69,10 +69,34 @@ behaviour so it doesn't change by accident.
 **The digits can match a `type`.** Matching the whole JSON column, rather than
 picking the `n` values out of it, is what keeps this working on both MySQL and
 PostgreSQL — core supports both and they share no portable JSON substring
-operator. The cost is that `"type":4` is also digits, so a single-digit search
-matches any customer who has a phone at all. Not worth guarding against: a
-one-digit search already matches most of the database through the name,
-subject and message-body conditions this one is OR'd alongside.
+operator. The cost is that the `type` flag (1-6) is also digits, so a
+single-digit search matches any customer who has a phone at all.
+
+There's no minimum term length guarding that, and it's worth being precise
+about why, because the sibling CustomerFieldSearch module reached the same
+decision on reasoning that does **not** transfer. There, the match is a
+subquery pinned to a single customer, so nothing scales with term length. Here
+it genuinely is an unindexable scan across the whole customers table. The
+argument is just that it isn't a scan this module introduces: a one-character
+search already runs `threads.body LIKE '%x%'` and half a dozen other unanchored
+LIKEs alongside it, so a threshold would buy nothing while making the box
+behave differently at two characters than at three. Core's own
+`search_by == 'phone'` mode has no threshold either.
+
+**Excluded customers can still come back on a phone match.** `ajaxSearch`
+adds its `exclude_id`/`exclude_email` conditions with `where()` (AND) while the
+name and phone conditions use `orWhere()` at the same level, and AND binds
+tighter, so the clause compiles as "(email match AND NOT excluded) OR name
+match OR phone match". The Merge Customers picker passes `exclude_id` to stop
+you merging a customer into themselves, so searching a phone there can now
+offer the customer you're merging from.
+
+This is left as-is on purpose. Core's own name matching already bypasses those
+excludes the same way, so it isn't a new class of bug, and correcting the
+precedence would change exclude behaviour for every `ajaxSearch` caller rather
+than just phone matches — the same call CustomerFieldSearch made when it hit
+this. `test_exclude_id_does_not_suppress_a_phone_match` pins it so a future fix
+to the underlying precedence has to notice rather than change it silently.
 
 ## Why these hooks and not later ones
 
@@ -106,11 +130,16 @@ tab matching at all, mailbox scoping preserved on all three surfaces plus
 the Customers tab's separate explicit-`f[mailbox]`-filter path, no duplicate
 rows for a customer with two matching numbers, formatting ignored on both
 sides, the country-code asymmetry above, customer-name matching still working
-on the Conversations tab, and a digit-free term not matching every customer
-with a phone.
+on the Conversations tab, a digit-free term not matching every customer with a
+phone, and the two documented-not-fixed behaviours above (the `exclude_id`
+bypass, and a 4-argument listener on `search.customers.text_match` still
+receiving all four alongside this module's 2-argument one, which is what keeps
+CustomerFieldSearch's "Custom Field" dropdown narrowing when both modules are
+active).
 
-Ten of the thirteen fail with the module's provider not booted, confirming
-they test this module rather than core behaviour that was already there.
+Most of them fail with the module's provider not booted, confirming they test
+this module rather than core behaviour that was already there. The ones that
+still pass are the negative guards, which is the point of them.
 
 ## Activation
 
