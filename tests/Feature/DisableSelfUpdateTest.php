@@ -65,13 +65,47 @@ class DisableSelfUpdateTest extends TestCase
     }
 
     /**
-     * Read from the config file rather than through config(), which reports
-     * whatever a cached config happens to hold. This is the value a server
-     * picks up when it runs config:cache on deploy.
+     * Evaluates config/app.php with the relevant environment variables cleared,
+     * so what comes back is the default the file ships rather than whatever the
+     * machine running the tests happens to have set.
+     *
+     * That distinction matters here: APP_DISABLE_SELF_UPDATE=false is the
+     * documented way to re-enable updating, so a developer who had used it would
+     * otherwise fail the test asserting the shipped default. Clearing and
+     * restoring is enough because this fork's env() reads through getenv() only
+     * (see overrides/laravel/framework/src/Illuminate/Support/helpers.php).
+     *
+     * Evaluating the file, rather than pattern-matching its text, keeps the
+     * assertion about the value the app actually receives — a text match would
+     * still pass if the expression were later wrapped in something that changed
+     * the result.
+     */
+    protected function shippedConfig(array $keys)
+    {
+        $saved = [];
+        foreach ($keys as $key) {
+            $saved[$key] = getenv($key);
+            putenv($key);
+        }
+
+        try {
+            return require base_path('config/app.php');
+        } finally {
+            foreach ($saved as $key => $value) {
+                if ($value !== false) {
+                    putenv($key.'='.$value);
+                }
+            }
+        }
+    }
+
+    /**
+     * The default the file ships, which is what a server picks up when it runs
+     * config:cache on deploy.
      */
     public function test_the_config_file_ships_it_disabled()
     {
-        $config = require base_path('config/app.php');
+        $config = $this->shippedConfig(['APP_DISABLE_SELF_UPDATE']);
 
         $this->assertTrue($config['disable_self_update']);
     }
@@ -83,7 +117,7 @@ class DisableSelfUpdateTest extends TestCase
      */
     public function test_version_checking_is_not_disabled_too()
     {
-        $config = require base_path('config/app.php');
+        $config = $this->shippedConfig(['APP_DISABLE_UPDATING']);
 
         $this->assertFalse((bool) $config['disable_updating']);
     }
