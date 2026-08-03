@@ -456,6 +456,28 @@ class CustomerPhoneSearchTest extends TestCase
     }
 
     /**
+     * The anchor includes the colon and opening quote, so it depends on the
+     * column holding exactly what json_encode wrote. That holds today:
+     * customers.phones is a TEXT column written via Helper::jsonEncodeUtf8, so
+     * there is no space after the colon and no re-serialising by the database.
+     *
+     * Pinned here because the dependency is invisible at the call site and the
+     * failure would be silent. If the column were migrated to a native
+     * JSON/JSONB type, or the encoder ever pretty-printed, the stored text
+     * would become `"n": "..."` and every phone search would quietly stop
+     * matching. This fails instead.
+     */
+    public function test_the_anchor_matches_the_stored_json_format()
+    {
+        $customer = $this->makeCustomer(['79123456']);
+
+        $stored = \App\Customer::find($customer->id)->phones;
+
+        $this->assertStringContainsString('"n":"', $stored, 'no space after the colon, or the search anchor cannot match');
+        $this->assertStringNotContainsString('"n": "', $stored);
+    }
+
+    /**
      * Anchoring the pattern on the "n" key stops a short search matching the
      * JSON's own structure. formatPhones() writes value, then type, then n, so
      * a single phone's "type":4 sits before the anchor and is out of reach.

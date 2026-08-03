@@ -97,6 +97,17 @@ class CustomerPhoneSearchServiceProvider extends ServiceProvider
         // in the "value" it was built from, so nothing findable before the
         // anchor is unfindable after it.
         //
+        // The anchor includes the colon and opening quote, which assumes the
+        // column holds exactly what PHP's json_encode wrote. It does:
+        // customers.phones is a TEXT column (created that way in 2018 and never
+        // altered) written via Helper::jsonEncodeUtf8, which is json_encode with
+        // JSON_UNESCAPED_UNICODE and no pretty-printing, so there is never a
+        // space after the colon. Were the column ever migrated to a native
+        // JSON/JSONB type, the database could re-serialise it as `"n": "..."`
+        // and this would silently stop matching, so the assumption is pinned by
+        // test_the_anchor_matches_the_stored_json_format rather than left
+        // implicit.
+        //
         // No LIKE-metacharacter escaping needed, unlike CustomerFieldSearch:
         // phoneToNumeric() has already stripped everything that isn't a digit.
         // Nor 'ilike' on PostgreSQL, digits having no case to fold.
