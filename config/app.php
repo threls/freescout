@@ -410,6 +410,47 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Disable in-app self-updating (threls fork patch)
+    |--------------------------------------------------------------------------
+    |
+    | The bundled updater downloads a release archive from
+    | freescout-help-desk/freescout (see config/self-update.php) and copies it
+    | over base_path(). That is right for a stock install, where upstream's
+    | files are the only files. Here it is wrong twice over: it overwrites this
+    | fork's core patches with upstream's versions, and it writes into a working
+    | tree Forge deploys from git, so the next deploy fights it.
+    |
+    | Losing the patches is the dangerous part, because it is silent. The hooks
+    | our search modules listen on (search.customers.text_match and
+    | search.customers.ajax_text_match) exist only in this fork, while Modules/
+    | is absent from upstream's archive and so survives untouched. The modules
+    | stay listed and Active, registering listeners on hooks that no longer
+    | fire, and customer search quietly stops matching account numbers, ID
+    | cards and phone numbers with nothing logged. This is not theoretical: it
+    | happened on a dev checkout on 3 Aug 2026 while this guard was being
+    | written, and the only visible symptom was tests failing to load.
+    |
+    | Upgrades here go through git: merge upstream into a sync branch, resolve
+    | against the fork's patches, review, deploy. Pointing the updater at
+    | threls/freescout instead is not an alternative — the fork carries no
+    | release tags of its own, only upstream's mirrored ones, so the archive
+    | fetched would still be upstream's code.
+    |
+    | Every read of this is `!== false` against a `true` default, so updating is
+    | permitted only by a deliberate boolean false. Absent, null and empty all
+    | mean disabled. Both halves of that matter: the key is missing entirely on
+    | any install that ran config:cache before this existed, and Config::get
+    | returns null rather than the default when a key is present but null, so a
+    | plain truthiness check would fail open in exactly those cases.
+    |
+    | Kept separate from disable_updating above so version *checking* stays on:
+    | knowing a new upstream release exists is how we know to plan a sync.
+    |
+    */
+    'disable_self_update' => env('APP_DISABLE_SELF_UPDATE', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Use custom conversation numbers instead of conversation ID.
     |--------------------------------------------------------------------------
     */

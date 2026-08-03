@@ -40,6 +40,21 @@ class Update extends Command
      */
     public function handle()
     {
+        // threls fork patch: same block as the web action in SystemController,
+        // repeated because this command is a second way in and the likelier one
+        // to end up in a cron or a deploy script by mistake. Checked before
+        // confirmToProceed(), so --force cannot get past it. See
+        // config/app.php disable_self_update for why.
+        if (\Config::get('app.disable_self_update', true) !== false) {
+            $this->error('Self-updating is disabled on this installation.');
+            $this->line('This is a fork of FreeScout with patches to core files. The bundled updater');
+            $this->line('fetches an archive from freescout-help-desk/freescout and copies it over the');
+            $this->line('app, which silently drops those patches and breaks customer search.');
+            $this->line('Upgrade by merging upstream into a sync branch and deploying it instead.');
+
+            return 1;
+        }
+
         if (!$this->confirmToProceed()) {
             return;
         }
