@@ -29,7 +29,16 @@
                             <strong class="text-danger">{{ \Config::get('app.version') }}</strong>
                             <div class="alert alert-danger margin-top-10">
                                 {{ __('A new version is available') }}: <strong>{{ $latest_version }}</strong> <a href="{{ config('app.freescout_repo') }}/releases" target="_blank">({{ __('View details') }})</a>
-                                <button class="btn btn-default btn-sm update-trigger margin-left-10" data-loading-text="{{ __('Updating') }}…{{ __('This may take several minutes') }}"><small class="glyphicon glyphicon-refresh"></small> {{ __('Update Now') }}</button>
+                                {{-- threls fork patch: the notice stays, so we still see when an upstream
+                                     release lands and can plan a sync, but the one-click update is gone.
+                                     It copies upstream's files over this fork and silently drops the
+                                     patches customer search depends on. See config/app.php
+                                     disable_self_update. The action is blocked server-side too. --}}
+                                @if (\Config::get('app.disable_self_update', true) !== false)
+                                    <div class="margin-top">{{ __('This installation is updated by deploying, not from here.') }}</div>
+                                @else
+                                    <button class="btn btn-default btn-sm update-trigger margin-left-10" data-loading-text="{{ __('Updating') }}…{{ __('This may take several minutes') }}"><small class="glyphicon glyphicon-refresh"></small> {{ __('Update Now') }}</button>
+                                @endif
                             </div>
                         @else
                             <strong class="text-success">{{ \Config::get('app.version') }}</strong>
