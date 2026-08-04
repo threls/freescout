@@ -18,7 +18,7 @@ return [
     | or any other location as required by the application or its packages.
     */
 
-    'version' => '1.8.231',
+    'version' => '1.8.232',
 
     /*
     |--------------------------------------------------------------------------
@@ -280,6 +280,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | File extensions that support agents are allowed to upload.
+    | Files with other extensions will be rejected.
+    | Must be in sync with corresponding parameter in .env.example.
+    |
+    | Should contain comma separated list: jpg,jpeg,png,gif...
+    |-------------------------------------------------------------------------
+    */
+    'allowed_extensions'    => env('APP_ALLOWED_EXTENSIONS') 
+                                ? explode(',', env('APP_ALLOWED_EXTENSIONS'))
+                                : ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp3', 'wav', 'ogg', 'wma', 'pdf', 'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx'],
+
+    /*
+    |--------------------------------------------------------------------------
     | Allowed extensions and mime types for files uploaded by customers.
     | Files with other extensions and mime types will be renamed.
     |
@@ -525,6 +538,14 @@ return [
     |-------------------------------------------------------------------------
     */
     'limit_user_customer_visibility'    => env('APP_LIMIT_USER_CUSTOMER_VISIBILITY', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Treat Waiting Since column as "Time of the first unanswered customer message"
+    | instead of "Time of the last customer activity".
+    |-------------------------------------------------------------------------
+    */
+    'waiting_since_as_first_unanswered_customer_message'    => env('WAITING_SINCE_AS_FIRST_UNANSWERED_CUSTOMER_MESSAGE', false),
 
     /*
     |--------------------------------------------------------------------------

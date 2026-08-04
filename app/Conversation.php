@@ -51,6 +51,12 @@ class Conversation extends Model
     const PERSON_CUSTOMER = 1;
     const PERSON_USER = 2;
 
+    /**
+     * Name of the meta parameter storing actual time of the last customer reply
+     * when "waiting_since_as_first_unanswered_customer_message" mode is enabled.
+     */
+    const META_LAST_CUSTOMER_REPLY_AT = 'lcr';
+
     public static $persons = [
         self::PERSON_CUSTOMER => 'customer',
         self::PERSON_USER     => 'user',
@@ -472,6 +478,47 @@ class Conversation extends Model
             }
         }
         return $query->first();
+    }
+
+    /**
+     * Get time of the last customer reply taking into account value stored in the meta.
+     *
+     * When "waiting_since_as_first_unanswered_customer_message" mode is enabled,
+     * the $last_reply_at field does not store time of each customer reply,
+     * instead it's stored in the meta.
+     */
+    public function getLastCustomerReplyAt()
+    {
+        $meta_time = $this->getMeta(self::META_LAST_CUSTOMER_REPLY_AT);
+
+        if ($meta_time) {
+            $carbon_meta_time = \Helper::createCarbonDateFromFormat($meta_time);
+            if ($carbon_meta_time && $carbon_meta_time->gt($this->last_reply_at)) {
+                return $carbon_meta_time;
+            }
+        }
+
+        if ($this->last_reply_from == self::PERSON_CUSTOMER) {
+            return $this->last_reply_at;
+        } else {
+            return null;
+        }
+    }
+
+    public function setLastReplyAt($value)
+    {
+        // Treat Waiting Since column as "Time of the first unanswered customer message"
+        // instead of "Time of the last customer activity".
+        // https://github.com/freescout-help-desk/freescout/issues/5225
+        if (config('app.waiting_since_as_first_unanswered_customer_message')) {
+            if ($this->last_reply_from != Conversation::PERSON_CUSTOMER) {
+                $this->last_reply_at = $value;
+            } else {
+                $this->setMeta(Conversation::META_LAST_CUSTOMER_REPLY_AT, $value);
+            }
+        } else {
+            $this->last_reply_at = $value;
+        }
     }
 
     /**
@@ -2343,8 +2390,8 @@ class Conversation extends Model
     public static function refreshConversations($conversation, $thread)
     {
         \App\Events\RealtimeConvNewThread::dispatchSelf($thread);
-        \App\Events\RealtimeMailboxNewThread::dispatchSelf($conversation->mailbox_id);
-        \App\Events\RealtimeChat::dispatchSelf($conversation->mailbox_id);
+        \App\Events\RealtimeMailboxNewThread::dispatchSelf($conversation->mailbox_id, $thread->id, (int)$conversation->isChat());
+        \App\Events\RealtimeChat::dispatchSelf($conversation->mailbox_id, $thread->id, (int)$conversation->isChat());
     }
 
     public static function getConvTableSorting($request = null)
@@ -2450,7 +2497,7 @@ class Conversation extends Model
                     ->orWhere('threads.created_by_customer_id', '=', $customer_id);
             });
         }
-        if (!empty($filters['status'])) {
+        if (!empty($filters['status']) && is_array($filters['status'])) {
             if (count($filters['status']) == 1) {
                 // = is faster than IN.
                 $query_conversations->where('conversations.status', '=', $filters['status'][0]);
@@ -2458,7 +2505,7 @@ class Conversation extends Model
                 $query_conversations->whereIn('conversations.status', $filters['status']);
             }
         }
-        if (!empty($filters['state'])) {
+        if (!empty($filters['state']) && is_array($filters['state'])) {
             if (count($filters['state']) == 1) {
                 // = is faster than IN.
                 $query_conversations->where('conversations.state', '=', $filters['state'][0]);

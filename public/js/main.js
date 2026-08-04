@@ -28,6 +28,8 @@ var fs_checkbox_shift_last_checked = null;
 // lose its checked state the moment a later search overwrites it.
 var fs_merge_selected_ids = {};
 var upload_in_progress = false;
+var audio_chat;
+var autoplay_msg_shown = false;
 
 var FS_STATUS_CLOSED = 3;
 
@@ -578,6 +580,16 @@ function summernoteInit(selector, new_options)
 		    ['actions-select', ['insertvar']]
 		],
 		buttons: buttons,
+		// Disable inserting HR tag.
+		// https://github.com/freescout-help-desk/freescout/issues/4909
+	    keyMap: {
+	        pc: {
+	            'CTRL+ENTER': '' // Disable the shortcut on Windows/Linux
+	        },
+	        mac: {
+	            'CTRL+ENTER': '' // Disable the shortcut on Mac
+	        }
+	    },
 	    callbacks: {
 		    onInit: function() {
 		    	// Remove statusbar
@@ -1643,6 +1655,7 @@ function showReplyForm(data, scroll_offset)
 			if (field == 'body') {
 				// Display body value in editor
 				$('#body').summernote("code", data[field]);
+				$('#body').summernote('commit');
 			}
 			// Happens when opening draft or after Undo
 			if (field == 'to_email' || field == 'cc' || field == 'bcc') {
@@ -1772,6 +1785,16 @@ function convEditorInit()
 		followingToolbar: false,
 		toolbar: fsApplyFilter('conversation.editor_toolbar', fs_conv_editor_toolbar),
 		buttons: fs_conv_editor_buttons,
+		// Disable inserting HR tag.
+		// https://github.com/freescout-help-desk/freescout/issues/4909
+	    keyMap: {
+	        pc: {
+	            'CTRL+ENTER': '' // Disable the shortcut on Windows/Linux
+	        },
+	        mac: {
+	            'CTRL+ENTER': '' // Disable the shortcut on Mac
+	        }
+	    },
 		callbacks: {
 	 		onImageUpload: function(files) {
 	 			if (!files) {
@@ -2014,7 +2037,11 @@ function editorSendFile(file, attach, is_conv, editor_id, container)
 		type: 'POST',
 		success: function(response){
 			if (typeof(response.url) == "undefined" || !response.url) {
-				showFloatingAlert('error', Lang.get("messages.error_occurred"));
+				msg = Lang.get("messages.error_occurred");
+				if (typeof(response.msg) != "undefined" && response.msg) {
+					msg = response.msg;
+				}
+				showFloatingAlert('error', msg);
 				loaderHide();
 				removeAttachment(attachment_dummy_id);
 				upload_in_progress = false;
@@ -2291,7 +2318,8 @@ function initReplyForm(load_attachments, init_customer_selector, is_new_conv)
 			// the same as a truly empty field (issue #4590).
 			if (typeof $.fn.summernote !== 'undefined' && $('#body').length) {
 				var body_code = $('#body').summernote('code');
-				if (!$.trim(body_code.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ''))) {
+				body_code = body_code.replace(/<(?!img\b)[^>]+>/gi, '').replace(/&nbsp;/gi, '');
+				if (!$.trim(body_code)) {
 					$('#body').val('');
 				}
 			}
@@ -3731,6 +3759,9 @@ function polycastInit()
 	        ) {
 	        	showBrowserNotification(event.data.browser.text, event.data.browser.url);
 	        }
+
+			// Play audio notification for chat conversations.
+	        playAudioNotification(event.data);
 	    }
     });
 
@@ -3904,6 +3935,9 @@ function polycastInit()
 		    	}
 		    	flashElement($('#conv-status'));
 		    }
+
+			// Play audio notification for chat conversations.
+	        playAudioNotification(data);
 	    });
 	}
 
@@ -3940,18 +3974,30 @@ function polycastInit()
 		    if ($(".table-conversations:first").length && !getSelectedConversations().length) {
 		    	loadConversations('', '', true);
 		    }
+
+			// Play audio notification for chat conversations.
+	        playAudioNotification(data);
 	    });
 	}
 
+	// Refresh chats list and also play audio notificaion
     var chats = $('#folders.chats:first');
     if (mailbox_id && chats.length) {
 	    var channel = poly.subscribe('chat.'+mailbox_id);
 
-	    channel.on('App\\Events\\RealtimeChat', function(data, event){
-	        if (!data || typeof(data.mailbox_id) == "undefined" || data.mailbox_id != mailbox_id) {
+	    channel.on('App\\Events\\RealtimeChat', function(data, event) {
+	        if (!data) {
+				return;
+		    }
+
+			// Play audio notification for chat conversations.
+	        playAudioNotification(data.audio.thread_id);
+
+	        if (typeof(data.mailbox_id) == "undefined" || data.mailbox_id != mailbox_id) {
 	        	return;
 		    }
 
+		    // Show chats
 		    if (typeof(data.chats_html) != "undefined" && data.chats_html) {
 		    	var chat_id = chats.children('li.active:first').attr('data-chat_id');
 		    	var header_html = chats.children('li:first').prop('outerHTML');
@@ -3973,6 +4019,72 @@ function polycastInit()
 
     // and when you disconnect, you can again at any point reconnect
     //poly.reconnect();
+}
+
+function playAudioNotification(data)
+{
+	var thread_id = '';
+
+	if (typeof(data.audio) != "undefined"
+		&& typeof(data.audio.thread_id) != "undefined" && data.audio.thread_id
+    ) {
+		thread_id = data.audio.thread_id+'';
+    } else {
+		return;
+    }
+
+	var save = false;
+	var now = Math.floor((new Date()).getTime() / 1000);
+
+	// Used to prevent playing same audio notifications on multiple tabs.
+	var audio_notifications = localStorageGetObject('audio_notifications');
+
+	if (!audio_notifications) {
+		audio_notifications = {};
+	}
+
+	if (!(thread_id in audio_notifications)) {
+		audio_notifications[thread_id] = now;
+		playAudio();
+		save = true;
+	}
+
+	// Remove expired noitifications from storage.
+	for (thread_i in audio_notifications) {
+		if (parseInt(audio_notifications[thread_i]) < (now - 3600)) {
+			delete audio_notifications[thread_i];
+			save = true;
+		}
+	}
+	if (save) {
+		localStorageSetObject('audio_notifications', audio_notifications);
+	}
+}
+
+function playAudio()
+{
+	// Create the audio object
+    audio_chat = new Audio(Vars.public_url+'/audio/chat.mp3');
+    audio_chat.preload = 'auto';
+    audio_chat.currentTime = 0;
+
+    audio_chat.play().catch(function (err) {
+        if (err.name === 'NotAllowedError' && !autoplay_msg_shown) {
+			if (isModalOpen()) {
+				return;
+			}
+			autoplay_msg_shown = true;
+			showModalConfirm(Lang.get("messages.autoplay"), 'autoplay-confirm', {
+				size: 'md',
+				on_show: function(modal) {
+					modal.children().find('.autoplay-confirm:first').click(function(e) {
+						modal.modal('hide');
+						audio_chat.play()
+					});
+				}
+			});
+        }
+    });
 }
 
 function initChats()
@@ -5831,6 +5943,11 @@ function adjustCustomerSidebarHeight()
 function closeAllModals()
 {
 	$('.modal').modal('hide');
+}
+
+function isModalOpen()
+{
+	return $('.modal.in').length;
 }
 
 function replaceAll(text, search, replacement) {
