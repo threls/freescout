@@ -42,10 +42,11 @@ typed it, and `n`, the same number reduced to digits:
 ```
 
 Each listener reduces the search term with the same `Helper::phoneToNumeric()`
-and matches it as a substring of the column: `phones LIKE '%<digits>%'`. Both
-sides being digit-only is what makes formatting irrelevant.
+and matches it as a substring of the column, anchored on the `n` key:
+`phones LIKE '%"n":"%<digits>%'`. Both sides being digit-only is what makes
+formatting irrelevant; the anchor is about short searches, below.
 
-This is deliberately the identical expression core already uses for its own
+Apart from the anchor this is the expression core already uses for its own
 `search_by == 'phone'` mode, rather than something stricter. Agents reach
 phone-mode search and these three surfaces from the same UI, and two boxes
 that look alike returning different customers for the same number would be
@@ -66,14 +67,28 @@ both sides against an assumed country for the install — a decision to take
 with the client, not one to infer here. There's a test pinning the current
 behaviour so it doesn't change by accident.
 
-**The digits can match a `type`.** Matching the whole JSON column, rather than
-picking the `n` values out of it, is what keeps this working on both MySQL and
-PostgreSQL — core supports both and they share no portable JSON substring
-operator. The cost is that the `type` flag (1-6) is also digits, so a
-single-digit search matches any customer who has a phone at all.
+**A short search can still match a `type`, on customers with several phones.**
+The column is matched as text rather than by reading the numbers out of the
+JSON, because core supports both MySQL and PostgreSQL and they share no
+portable JSON substring operator. That leaves the `type` flag (1-6) sitting in
+the same text being searched, so searching `4` would otherwise return every
+customer with a mobile number.
 
-There's no minimum term length guarding that, and it's worth being precise
-about why, because the sibling CustomerFieldSearch module reached the same
+Anchoring the pattern on `"n":"` takes most of that away. `formatPhones()`
+writes each phone as `value`, then `type`, then `n`, so a phone's own `type` is
+behind the anchor and out of reach. It costs nothing and loses no real match:
+`n` is the digits of `value`, so any digit run findable in one is findable in
+the other.
+
+It only half works, though, and it's worth knowing which half. The pattern
+allows anything between the anchor and the digits, so on a customer with two or
+more phones a *later* entry's `type` is still reachable and `4` still matches
+them. Closing that needs a regex to say "digits only after the anchor", which
+is exactly the thing MySQL and PostgreSQL don't spell the same way, so it would
+cost the portability the text match was chosen for. Both halves have a test.
+
+There's no minimum term length either, and it's worth being precise about why,
+because the sibling CustomerFieldSearch module reached the same
 decision on reasoning that does **not** transfer. There, the match is a
 subquery pinned to a single customer, so nothing scales with term length. Here
 it genuinely is an unindexable scan across the whole customers table. The
@@ -131,15 +146,23 @@ the Customers tab's separate explicit-`f[mailbox]`-filter path, no duplicate
 rows for a customer with two matching numbers, formatting ignored on both
 sides, the country-code asymmetry above, customer-name matching still working
 on the Conversations tab, a digit-free term not matching every customer with a
-phone, and the two documented-not-fixed behaviours above (the `exclude_id`
-bypass, and a 4-argument listener on `search.customers.text_match` still
-receiving all four alongside this module's 2-argument one, which is what keeps
-CustomerFieldSearch's "Custom Field" dropdown narrowing when both modules are
-active).
+phone, both halves of the `"n":"` anchor (a single phone's `type` no longer
+matched, a later phone's still is), and the two documented-not-fixed
+behaviours above (the `exclude_id` bypass, and a 4-argument listener on
+`search.customers.text_match` still receiving all four alongside this module's
+2-argument one, which is what keeps CustomerFieldSearch's "Custom Field"
+dropdown narrowing when both modules are active).
 
 Most of them fail with the module's provider not booted, confirming they test
 this module rather than core behaviour that was already there. The ones that
 still pass are the negative guards, which is the point of them.
+
+The tests about the shape of the LIKE pattern go through `Eventy` against a
+query scoped to their own fixtures, not through a controller. The real search
+pages paginate, and a term as short as `4` matches enough of the surrounding
+test data through name, address and email that a fixture falls off the first
+page — so a controller-level assertion there passes or fails on pagination
+rather than on the pattern, which is exactly what it looks like it's testing.
 
 ## Activation
 
