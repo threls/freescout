@@ -341,6 +341,21 @@ class SystemController extends Controller
         switch ($request->action) {
 
             case 'update':
+                // threls fork patch: refuse in-app self-updating, which would
+                // overwrite this fork's core patches with upstream's files. See
+                // config/app.php disable_self_update for why. Checked here and
+                // not just by hiding the button, since this is a plain POST
+                // anyone with admin access could send directly. The `true`
+                // default matters: on an install that cached its config before
+                // this key existed the lookup returns null, and a bare check
+                // would let the update through on exactly the long-lived
+                // installs most likely to have a stale cache.
+                if (\Config::get('app.disable_self_update', true) !== false) {
+                    $response['msg'] = __('Updating from here is disabled on this installation. It would overwrite customisations this install depends on. Deploy the update instead.');
+
+                    break;
+                }
+
                 try {
                     $status = \Updater::update();
 

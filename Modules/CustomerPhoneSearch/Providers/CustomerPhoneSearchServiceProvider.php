@@ -89,10 +89,29 @@ class CustomerPhoneSearchServiceProvider extends ServiceProvider
             return $query;
         }
 
+        // Anchoring on the "n" key keeps a short search off the JSON's own
+        // structure: without it, searching "4" matches "type":4 and so returns
+        // every customer with a mobile number. It only half works, and the
+        // README says why, but it costs nothing and loses no real match: a
+        // phone's digits-only "n" is by definition a superset of any digit run
+        // in the "value" it was built from, so nothing findable before the
+        // anchor is unfindable after it.
+        //
+        // The anchor includes the colon and opening quote, which assumes the
+        // column holds exactly what PHP's json_encode wrote. It does:
+        // customers.phones is a TEXT column (created that way in 2018 and never
+        // altered) written via Helper::jsonEncodeUtf8, which is json_encode with
+        // JSON_UNESCAPED_UNICODE and no pretty-printing, so there is never a
+        // space after the colon. Were the column ever migrated to a native
+        // JSON/JSONB type, the database could re-serialise it as `"n": "..."`
+        // and this would silently stop matching, so the assumption is pinned by
+        // test_the_anchor_matches_the_stored_json_format rather than left
+        // implicit.
+        //
         // No LIKE-metacharacter escaping needed, unlike CustomerFieldSearch:
         // phoneToNumeric() has already stripped everything that isn't a digit.
         // Nor 'ilike' on PostgreSQL, digits having no case to fold.
-        $query->orWhere('customers.phones', 'like', '%'.$digits.'%');
+        $query->orWhere('customers.phones', 'like', '%"n":"%'.$digits.'%');
 
         return $query;
     }
